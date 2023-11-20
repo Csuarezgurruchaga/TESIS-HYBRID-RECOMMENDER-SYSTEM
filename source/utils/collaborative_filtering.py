@@ -182,38 +182,3 @@ def compute_prediction(u, i, user_item_matrix, sim, n_neighbors=35):
         return np.nan
 
     return rating_hat
-
-
-
-
-
-# def compute_neighbors(u, i, user_item_matrix, sim, n_neighbors=35):
-#     """
-#     Compute the top neighbors of item i for a given user u based on item similarity.
-
-#     Parameters:
-#     - u: User index
-#     - i: Item index for which neighbors are to be computed
-#     - sim: Dictionary of the similarity between items
-#     - n_neighbors: Number of neighbors to retrieve (default is 35)
-#     - user_item_matrix: User-item interaction matrix
-
-#     Returns:
-#     - neighbors_of_i: Dictionary containing the top neighbors of item i for user u
-#     """
-    
-#     sim_keys = sim[i].keys()
-#     # Intersection of keys in similaridades[i] and user_item_matrix
-#     non_nan_mask = user_item_matrix.iloc[u, :].notna() # VER SI ES ILOC O LOC!, PARA MI HAY Q BORRAR Y PONER LOC
-#     # Get the indices of non-NaN values, respecting the original indexing
-#     non_nan_idx = non_nan_mask[non_nan_mask].index
-    
-#     j = list(set(sim_keys) & set(list(non_nan_idx)))
-#     # Create a dictionary with keys from j and values from similaridades[i]
-#     sorted_similarities = {k: sim[i][k] for k in j}
-#     # Sort the dictionary based on values in descending order
-#     sorted_similarities = dict(sorted(sorted_similarities.items(), key=lambda x: x[1], reverse=True))
-#     # Select the top neighbors values from the sorted dictionary
-#     neighbors_of_i = dict(list(sorted_similarities.items())[:n_neighbors])
-    
-#     return neighbors_of_i
