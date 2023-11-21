@@ -182,3 +182,39 @@ def compute_prediction(u, i, user_item_matrix, sim, n_neighbors=35):
         return np.nan
 
     return rating_hat
+
+def compute_recommendations(u, user_item_matrix, dict_map, sim, n_recommendations = 10):
+    """
+    Generate top n recommendations for a given user based on item collaborative filtering.
+
+    Parameters:
+    - u (int): User ID for whom recommendations are to be generated.
+    - user_item_matrix (pd.DataFrame): Pandas DataFrame representing the user-item interaction matrix,
+                                       where rows are users, columns are items, and values indicate
+                                       user-item interactions (e.g., ratings).
+    - dict_map (dict): A dictionary mapping item indices to their corresponding item identifiers/names.
+    - sim (pd.DataFrame): Similarity matrix between items (e.g., item-item similarity).
+    - n_recommendations (int, optional): Number of recommendations to generate for the user. Default is 10.
+
+    Returns:
+    - list: A list of recommended item identifiers/names for the given user.
+
+    Notes:
+    - The user_item_matrix should be a Pandas DataFrame.
+    - The function uses item collaborative filtering to predict user-item interactions and generate recommendations.
+    - The final recommendations are returned as a list of item identifiers/names using the provided dict_map.
+    """
+
+    assert isinstance(user_item_matrix, pd.DataFrame), "user_item_matrix should be a Pandas DataFrame."
+    
+    predictions = {}
+    items_to_predict=list(user_item_matrix.loc[u, user_item_matrix.loc[u,:].isna()].index)
+    for i in items_to_predict:
+        predictions[i]=compute_prediction(u, i, user_item_matrix, sim)
+    
+    all_recommendations = dict(sorted(predictions.items(), key=lambda item: item[1], reverse= True))
+    n_recommendations = [k for k,_ in list(all_recommendations.items())[:n_recommendations]]
+    
+    rec = [dict_map[item] for item in n_recommendations]
+    
+    return rec
