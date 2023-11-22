@@ -1,34 +1,8 @@
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from scipy.spatial.distance import pdist, squareform
+from scipy.spatial.distance import pdist
 
-
-def leave_one_last_item(df, uid_col_name, proportion_test_items=0.1):
-    """
-    Splits a DataFrame into a test set containing a proportion of the last items for each user and a training set.
-
-    Parameters:
-        df (pd.DataFrame): The input DataFrame containing ratings data.
-        uid_col_name (str): The name of the column representing user IDs.
-        proportion_test_items (float, optional): The proportion of last items to include in the test set. Default is 10%.
-
-    Returns:
-        train (pd.DataFrame): DataFrame for training, containing all the items that are not in test.
-        test (pd.DataFrame): DataFrame for testing, containing the last proportion_test_items items for each user.
-    """
-
-    test = pd.DataFrame()
-
-    for _, data_by_user in df.groupby(uid_col_name):
-        n_test_items = int(df.shape[0]*proportion_test_items)
-        test = pd.concat([test, data_by_user.iloc[-n_test_items:]])
-
-    train = df[~df.index.isin(test.index)]
-    
-    return train, test
-
-    
 
 def adjusted_cosine_similarity(user_item_matrix, itemA, itemB, min_overlap=5):
     """
@@ -183,6 +157,7 @@ def compute_prediction(u, i, user_item_matrix, sim, n_neighbors=35):
 
     return rating_hat
 
+
 def compute_recommendations(u, user_item_matrix, dict_map, sim, n_recommendations = 10):
     """
     Generate top n recommendations for a given user based on item collaborative filtering.
@@ -197,7 +172,9 @@ def compute_recommendations(u, user_item_matrix, dict_map, sim, n_recommendation
     - n_recommendations (int, optional): Number of recommendations to generate for the user. Default is 10.
 
     Returns:
-    - list: A list of recommended item identifiers/names for the given user.
+    - tuple: A tuple containing:
+        - list: A list of recommended item identifiers/names for the given user.
+        - dict: Dictionary of normalized item predictions after subtracting user's mean rating.
 
     Notes:
     - The user_item_matrix should be a Pandas DataFrame.
@@ -207,14 +184,17 @@ def compute_recommendations(u, user_item_matrix, dict_map, sim, n_recommendation
 
     assert isinstance(user_item_matrix, pd.DataFrame), "user_item_matrix should be a Pandas DataFrame."
     
-    predictions = {}
+    rating_predictions = {}
     items_to_predict=list(user_item_matrix.loc[u, user_item_matrix.loc[u,:].isna()].index)
     for i in items_to_predict:
-        predictions[i]=compute_prediction(u, i, user_item_matrix, sim)
+        rating_predictions[i]=compute_prediction(u, i, user_item_matrix, sim)
     
-    all_recommendations = dict(sorted(predictions.items(), key=lambda item: item[1], reverse= True))
+    all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse= True))
     n_recommendations = [k for k,_ in list(all_recommendations.items())[:n_recommendations]]
+    
+    mu_rating_u = user_item_matrix.mean(axis=1)[u]
+    norm_rating_predictions = {item:hat_rating -  mu_rating_u for item, hat_rating in rating_predictions.items()}
     
     rec = [dict_map[item] for item in n_recommendations]
     
-    return rec
+    return rec, norm_rating_predictions
