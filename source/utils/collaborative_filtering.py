@@ -150,12 +150,13 @@ def compute_prediction(u, user_item_matrix, i, sim, n_neighbors=35):
     num = sum(np.array(list(neighbors.values())) * np.array(norm_rating))
     denom = sum(list(neighbors.values()))
     try:
-        rating_hat = user_ratings_mean[u] + num / denom
+        hat_rating = user_ratings_mean[u] + num / denom
     except ZeroDivisionError:
         print("Error Cold-Star Problem: No hay items vecinos para el item a predecir el ranking")
-        return np.nan
+        return np.nan, user_ratings_mean[u]
 
-    return rating_hat
+    
+    return hat_rating, user_ratings_mean[u]
 
 
 def recommend(u, user_item_matrix, dict_map, sim, n_recommendations = 10):
