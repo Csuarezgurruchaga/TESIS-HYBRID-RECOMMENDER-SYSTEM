@@ -126,7 +126,7 @@ def compute_neighbors(u, i, user_item_matrix, sim, n_neighbors=35):
 
         return neighbors_of_i
     
-def compute_prediction(u, i, user_item_matrix, sim, n_neighbors=35):
+def compute_prediction(u, user_item_matrix, i, sim, n_neighbors=35):
     """
     Compute the predicted rating for a given user and item.
 
@@ -152,13 +152,13 @@ def compute_prediction(u, i, user_item_matrix, sim, n_neighbors=35):
     try:
         rating_hat = user_ratings_mean[u] + num / denom
     except ZeroDivisionError:
-        print("Error: No hay items vecinos para el item a predecir el ranking")
+        print("Error Cold-Star Problem: No hay items vecinos para el item a predecir el ranking")
         return np.nan
 
     return rating_hat
 
 
-def compute_recommendations(u, user_item_matrix, dict_map, sim, n_recommendations = 10):
+def recommend(u, user_item_matrix, dict_map, sim, n_recommendations = 10):
     """
     Generate top n recommendations for a given user based on item collaborative filtering.
 
@@ -172,13 +172,12 @@ def compute_recommendations(u, user_item_matrix, dict_map, sim, n_recommendation
     - n_recommendations (int, optional): Number of recommendations to generate for the user. Default is 10.
 
     Returns:
-    - tuple: A tuple containing:
-        - list: A list of recommended item identifiers/names for the given user.
-        - dict: Dictionary of normalized item predictions after subtracting user's mean rating.
+    - list: A list of TOP N recommended items for the given user.
 
     Notes:
     - The user_item_matrix should be a Pandas DataFrame.
     - The function uses item collaborative filtering to predict user-item interactions and generate recommendations.
+    - Recommendations are made for items that the user has not interacted with (NaN entries in the user-item matrix).
     - The final recommendations are returned as a list of item identifiers/names using the provided dict_map.
     """
 
@@ -192,9 +191,13 @@ def compute_recommendations(u, user_item_matrix, dict_map, sim, n_recommendation
     all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse= True))
     n_recommendations = [k for k,_ in list(all_recommendations.items())[:n_recommendations]]
     
-    mu_rating_u = user_item_matrix.mean(axis=1)[u]
-    norm_rating_predictions = {item:hat_rating -  mu_rating_u for item, hat_rating in rating_predictions.items()}
+    # mu_rating_u = user_item_matrix.mean(axis=1)[u]
+    # norm_rating_predictions = {item:hat_rating -  mu_rating_u for item, hat_rating in rating_predictions.items()}
     
     rec = [dict_map[item] for item in n_recommendations]
     
-    return rec, norm_rating_predictions
+    # percentile_80_u = np.percentile(list(norm_rating_predictions.values()), 80)
+    
+    # return rec, percentile_80_u #add in documentation of the function
+    
+    return rec
