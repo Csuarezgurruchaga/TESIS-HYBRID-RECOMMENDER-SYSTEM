@@ -35,6 +35,7 @@ def train_test_split(user_item_matrix, proportion_test_set=0.2, random_seed=1203
         
     train_df = user_item_matrix.copy()
     test_df = user_item_matrix.copy()
+    
     users = list(user_item_matrix.index)
     
     for user in users:
