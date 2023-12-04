@@ -59,7 +59,7 @@ def train_test_split(data, userId_col_name="userId", movieId_col_name = 'movieId
         
         unsorted_test_candidates = data.loc[(data['userId'] == user) & (data['movieId'].isin(notna_items_idx))]
         
-        test_set_idx=list(unsorted_test_candidates.sort_values("timestamp", ascending = True)["movieId"].values[-test_set_size:])
+        test_set_idx=list(unsorted_test_candidates.sort_values(time_col_name, ascending = True)["movieId"].values[-test_set_size:])
         train_df.loc[user, test_set_idx] = np.nan
         y_true[user] = test_df.loc[user, test_set_idx].values
         test_items[user] = list(test_df.loc[user, test_set_idx].index)
