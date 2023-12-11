@@ -1,6 +1,8 @@
-import random
 import numpy as np
 import pandas as pd
+from sklearn.metrics import silhouette_score
+from sklearn.cluster import KMeans
+
 
 """ 
 pros y contras sobre este metodo de split
@@ -69,6 +71,116 @@ def train_test_split(data, userId_col_name="userId", movieId_col_name='movieId',
     return train_df, y_true, test_items
 
 
+def clusterize_user(to_clusterize, max_n_clusters, movieId_col_name='movieId', rating_col_name="rating"):
+    """
+    Clusterizes movies for a given user based on their ratings using KMeans clustering.
+
+    Parameters:
+    - to_clusterize (DataFrame): The DataFrame containing user's movie ratings to be clustered.
+    - max_n_clusters (int): The maximum number of clusters to be created for the user u. A larger number may result in overfitting.
+    - movieId_col_name (str, optional): The name of the movie ID column. Defaults to 'movieId'.
+    - rating_col_name (str, optional): The name of the rating column. Defaults to 'rating'.
+
+    Returns:
+    - clusterized_df (DataFrame): A DataFrame containing movie IDs, ratings, and cluster labels for the user.
+    """
+    
+    n_clusters_range = range(2, max_n_clusters+1)
+
+    # Dictionary to store silhouette scores for each number of clusters
+    sil_scores = {}
+
+    for n_clusters in n_clusters_range:
+        # Create and fit KMeans model
+        kmeans = KMeans(n_clusters=n_clusters, random_state=1203, n_init = 'auto')
+        cluster_labels = kmeans.fit_predict(np.array(to_clusterize[rating_col_name]).reshape(-1, 1))
+        
+        # Calculate Silhouette Score
+        if len(set(cluster_labels))>1:
+            sil_score = silhouette_score(np.array(to_clusterize[rating_col_name]).reshape(-1, 1), cluster_labels)
+            sil_scores[n_clusters] = sil_score
+            # Find the best number of clusters
+            best_n_clusters = max(sil_scores, key=sil_scores.get)
+    
+        # the user rated similarly all the movies that he saw.
+        if len(set(cluster_labels))==1:
+            best_n_clusters = 1
+
+    # Create and fit KMeans model with the best number of clusters
+    best_kmeans = KMeans(n_clusters=best_n_clusters, random_state=1203, n_init = 'auto')
+    best_cluster_labels = best_kmeans.fit_predict(np.array(to_clusterize[rating_col_name]).reshape(-1, 1))
+
+    clusterized_df = pd.DataFrame({movieId_col_name: to_clusterize[movieId_col_name].values,
+                                    rating_col_name: to_clusterize[rating_col_name].values,  
+                                    'cluster_label': best_cluster_labels})
+
+    return clusterized_df
+
+
+
+
+def LOO_split_by_cluster(data, max_n_clusters=3, userId_col_name = "userId", movieId_col_name="movieId", 
+           time_col_name = "timestamp", rating_col_name = "rating"):
+    
+    """
+    Leave-One-Out (LOO) split of the input data based on clustering for each user and timestamp.
+
+    This function clusters movies for each user and creates a train-test split for each cluster using LOO
+    time sensitive strategy.
+
+    Parameters:
+    - data (DataFrame): The input DataFrame containing user-item interactions.
+    - max_n_clusters (int, optional): The maximum number of clusters to be created for each user. Defaults to 3.
+    - userId_col_name (str, optional): The name of the user ID column. Defaults to "userId".
+    - movieId_col_name (str, optional): The name of the movie ID column. Defaults to "movieId".
+    - time_col_name (str, optional): The name of the timestamp column. Defaults to "timestamp".
+    - rating_col_name (str, optional): The name of the rating column. Defaults to "rating".
+
+    Returns:
+    - train_LOO (DataFrame): The training DataFrame with NaNs replacing test set interactions.
+    - y_true_LOO (DataFrame): A DataFrame containing the true ratings for the test set.
+    - outliers_rating_movies (DataFrame): A DataFrame containing outliers' ratings for movies in clusters with fewer than 2 movies.
+    """
+    
+    
+    users = set(data[userId_col_name])
+    train_LOO = pd.DataFrame()
+    y_true_LOO = pd.DataFrame()
+    outliers_rating_movies = pd.DataFrame()
+    
+    #for each user I build the clusters of items and for each cluster build train_LOO and test_LOO time sensitive
+    for u in users:
+        to_clusterize = data[(data[userId_col_name]==u) & (data[rating_col_name].notna())][[rating_col_name, movieId_col_name]]
+        clusters = clusterize_user(to_clusterize, max_n_clusters)
+        
+        items_timestamp = data[data[userId_col_name] == u]
+        df = pd.merge(clusters, items_timestamp, on=[movieId_col_name, rating_col_name], how='left')
+        total_movies_by_cluster = df.groupby('cluster_label')[movieId_col_name].count().to_dict()
+        
+        # if the cluster has more than 2 movies
+        representative_clusters = [cluster for cluster, n_movies in total_movies_by_cluster.items() if n_movies>2]
+        df = df[df["cluster_label"].isin(representative_clusters)]
+        # get the movies that will be the validation set to fetch the better T0 for each cluster and each user
+        max_timestamp_indices = df.groupby('cluster_label')[time_col_name].idxmax()
+        col_list = ['cluster_label', userId_col_name, movieId_col_name, rating_col_name, time_col_name]
+        y_true_LOO_aux = df.loc[max_timestamp_indices, col_list].sort_values("cluster_label")
+        # set np.nan for train_LOO
+        y_true_movieid = list(y_true_LOO_aux[movieId_col_name])
+        train_df_LOO_aux = df.copy()
+        train_df_LOO_aux.loc[train_df_LOO_aux[movieId_col_name].isin(y_true_movieid), rating_col_name] = np.nan
+
+        #################################### OUTLIERS RATING MOVIES ####################################
+        no_representative_clusters = [cluster for cluster, n_movies in total_movies_by_cluster.items() if n_movies<=2]
+        #if the cluster has less than 2 movies, we 'll use the mean T0 of the user "u".
+        #outliers_dict = {cluster:movieId}
+        outliers_rating_movies_aux = df[df['cluster_label'].isin(no_representative_clusters)][['cluster_label',movieId_col_name]]\
+            .groupby('cluster_label')[movieId_col_name].apply(list)
+        
+        train_LOO  = pd.concat([train_LOO, train_df_LOO_aux], axis = 0)
+        y_true_LOO = pd.concat([y_true_LOO, y_true_LOO_aux] , axis = 0)
+        outliers_rating_movies = pd.concat([outliers_rating_movies_aux, train_df_LOO_aux], axis = 0)
+        
+    return train_LOO, y_true_LOO, outliers_rating_movies
 
 
 # def train_test_split(data, userId_col_name="userId" , movieId_col_name = 'movieId', 
