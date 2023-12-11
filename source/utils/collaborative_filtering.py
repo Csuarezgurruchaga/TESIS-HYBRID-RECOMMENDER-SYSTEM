@@ -74,7 +74,7 @@ class MemoryCollaborativeFilter:
                 if np.any(np.logical_and(self.user_item_matrix.loc[:, item1], self.user_item_matrix.loc[:, item2])): 
                     
                     # calculate the adjusted cosine similarity between the two items
-                    similarity = self.adjusted_cosine_similarity(self.user_item_matrix, item1, item2) 
+                    similarity = self.adjusted_cosine_similarity(item1, item2) 
                     
                     # we consider only the positive values of similarity
                     if similarity is not None and similarity >= 0:
@@ -117,7 +117,7 @@ class MemoryCollaborativeFilter:
         Compute the predicted rating for a given user and item.
         """
         
-        neighbors = self.compute_neighbors(u, i, self.user_item_matrix)
+        neighbors = self.compute_neighbors(u, i)
         user_ratings_mean = np.mean(self.user_item_matrix, axis=1)
         norm_rating = self.user_item_matrix.loc[u, :].dropna()[list(neighbors.keys())] - user_ratings_mean[u]
         num = sum(np.array(list(neighbors.values())) * np.array(norm_rating))
@@ -140,7 +140,7 @@ class MemoryCollaborativeFilter:
             rating_predictions = {}
             items_to_predict = list(self.user_item_matrix.loc[u, self.user_item_matrix.loc[u, :].isna()].index)
             for i in items_to_predict:
-                rating_predictions[i] = self.compute_prediction(u, self.user_item_matrix, i)
+                rating_predictions[i] = self.compute_prediction(u, i)
 
             all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
             n_recommendations = [k for k, _ in list(all_recommendations.items())[:self.n_recommendations]]
