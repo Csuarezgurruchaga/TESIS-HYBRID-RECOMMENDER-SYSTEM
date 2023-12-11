@@ -60,13 +60,15 @@ def train_test_split(data, userId_col_name="userId", movieId_col_name='movieId',
 
     y_true = test_candidates.groupby(userId_col_name)[rating_col_name].apply(list).to_dict()
 
+    #create train_df with NaNs in the rating column for test set positions
     train_df = data.copy()
-
-    for user_id, movie_ids in test_items.items():
-        train_df.loc[train_df[userId_col_name] == user_id, rating_col_name]=\
-            train_df.loc[train_df[userId_col_name] == user_id, movieId_col_name].replace(movie_ids, np.nan)
+    
+    for u,items in test_items.items():
+        train_df.loc[(train_df[userId_col_name] == u) & (train_df[movieId_col_name].isin(items)), rating_col_name] = np.nan
     
     return train_df, y_true, test_items
+
+
 
 
 # def train_test_split(data, userId_col_name="userId" , movieId_col_name = 'movieId', 
