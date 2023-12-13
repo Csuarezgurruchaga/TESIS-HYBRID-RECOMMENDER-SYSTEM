@@ -71,47 +71,58 @@ def train_test_split(data, userId_col_name="userId", movieId_col_name='movieId',
     return train_df, y_true, test_items
 
 
-def clusterize_user(to_clusterize, max_n_clusters, movieId_col_name='movieId', rating_col_name="rating"):
+def clusterize_user(u, to_clusterize, max_n_clusters, refine_n_clusters = True):
     """
-    Clusterizes movies for a given user based on their ratings using KMeans clustering.
+    Clusterizes items for a given user based on ratings using KMeans clustering.
 
     Parameters:
-    - to_clusterize (DataFrame): The DataFrame containing user's movie ratings to be clustered.
-    - max_n_clusters (int): The maximum number of clusters to be created for the user u. A larger number may result in overfitting.
-    - movieId_col_name (str, optional): The name of the movie ID column. Defaults to 'movieId'.
-    - rating_col_name (str, optional): The name of the rating column. Defaults to 'rating'.
+        u (int): User ID.
+        to_clusterize (pd.DataFrame): DataFrame containing 'rating' and 'movieId' columns to be clustered.
+        max_n_clusters (int): Maximum number of clusters to consider. A larger number may result in overfitting.
+        refine_n_clusters (bool): If True, refines the number of clusters based on silhouette scores.
 
     Returns:
-    - clusterized_df (DataFrame): A DataFrame containing movie IDs, ratings, and cluster labels for the user.
+        pd.DataFrame: Clusterized DataFrame with columns 'movieId', 'rating', and 'cluster_label'.
     """
     
-    n_clusters_range = range(2, max_n_clusters+1)
+    if refine_n_clusters:
+        n_clusters_range = range(2, max_n_clusters+1)
+        # Dictionary to store silhouette scores for each number of clusters
+        sil_scores = {}
+        for n_clusters in n_clusters_range:
+            # Create and fit KMeans model
+            kmeans = KMeans(n_clusters=n_clusters, random_state=1203, n_init = 'auto')
+            cluster_labels = kmeans.fit_predict(np.array(to_clusterize['rating']).reshape(-1, 1))
+            
+            # Calculate Silhouette Score
+            if len(set(cluster_labels))>1:
+                sil_score = silhouette_score(np.array(to_clusterize['rating']).reshape(-1, 1), cluster_labels)
+                sil_scores[n_clusters] = sil_score
 
-    # Dictionary to store silhouette scores for each number of clusters
-    sil_scores = {}
-
-    for n_clusters in n_clusters_range:
-        # Create and fit KMeans model
-        kmeans = KMeans(n_clusters=n_clusters, random_state=1203, n_init = 'auto')
-        cluster_labels = kmeans.fit_predict(np.array(to_clusterize[rating_col_name]).reshape(-1, 1))
+                # Find the best number of clusters
+                best_n_clusters = max(sil_scores, key=sil_scores.get)
         
-        # Calculate Silhouette Score
-        if len(set(cluster_labels))>1:
-            sil_score = silhouette_score(np.array(to_clusterize[rating_col_name]).reshape(-1, 1), cluster_labels)
-            sil_scores[n_clusters] = sil_score
-            # Find the best number of clusters
-            best_n_clusters = max(sil_scores, key=sil_scores.get)
-    
-        # the user rated similarly all the movies that he saw.
         if len(set(cluster_labels))==1:
+            # the user rated similarly all the movies that he saw.
             best_n_clusters = 1
+            print(f"n_clusters for user {u} is 1, the user rated similarly all the movies that he saw.")
+                
+        # Create and fit KMeans model with the best number of clusters
+        best_kmeans = KMeans(n_clusters=best_n_clusters, random_state=1203, n_init = 'auto')
+        best_cluster_labels = best_kmeans.fit_predict(np.array(to_clusterize['rating']).reshape(-1, 1))
 
-    # Create and fit KMeans model with the best number of clusters
-    best_kmeans = KMeans(n_clusters=best_n_clusters, random_state=1203, n_init = 'auto')
-    best_cluster_labels = best_kmeans.fit_predict(np.array(to_clusterize[rating_col_name]).reshape(-1, 1))
+        clusterized_df = pd.DataFrame({'movieId': to_clusterize['movieId'].values,
+                                        'rating': to_clusterize['rating'].values,  
+                                        'cluster_label': best_cluster_labels})
+        return clusterized_df    
+    
+    # if refine_n_clusters is False, the computation cost its reduced and the number of clusters is
+    # set as max_n_clusters
+    best_kmeans = KMeans(n_clusters = max_n_clusters, random_state=1203, n_init = 'auto')
+    best_cluster_labels = best_kmeans.fit_predict(np.array(to_clusterize['rating']).reshape(-1, 1))
 
-    clusterized_df = pd.DataFrame({movieId_col_name: to_clusterize[movieId_col_name].values,
-                                    rating_col_name: to_clusterize[rating_col_name].values,  
+    clusterized_df = pd.DataFrame({'movieId': to_clusterize['movieId'].values,
+                                    'rating': to_clusterize['rating'].values,  
                                     'cluster_label': best_cluster_labels})
 
     return clusterized_df
@@ -119,245 +130,52 @@ def clusterize_user(to_clusterize, max_n_clusters, movieId_col_name='movieId', r
 
 
 
+
+
 def LOO_split_by_cluster(data, max_n_clusters=3, userId_col_name = "userId", movieId_col_name="movieId", 
            time_col_name = "timestamp", rating_col_name = "rating"):
-    
     """
-    Leave-One-Out (LOO) split of the input data based on clustering for each user and timestamp.
-
-    This function clusters movies for each user and creates a train-test split for each cluster using LOO
-    time sensitive strategy.
+    Splits the data into leave-one-out (LOO) train and validation sets based on item clusters for each user.
 
     Parameters:
-    - data (DataFrame): The input DataFrame containing user-item interactions.
-    - max_n_clusters (int, optional): The maximum number of clusters to be created for each user. Defaults to 3.
-    - userId_col_name (str, optional): The name of the user ID column. Defaults to "userId".
-    - movieId_col_name (str, optional): The name of the movie ID column. Defaults to "movieId".
-    - time_col_name (str, optional): The name of the timestamp column. Defaults to "timestamp".
-    - rating_col_name (str, optional): The name of the rating column. Defaults to "rating".
+        data (pd.DataFrame): Input DataFrame containing user-item interactions.
+        max_n_clusters (int): Maximum number of clusters to consider for item clustering.
+        userId_col_name (str): Name of the column containing user IDs.
+        movieId_col_name (str): Name of the column containing movie IDs.
+        time_col_name (str): Name of the column containing timestamps.
+        rating_col_name (str): Name of the column containing ratings.
 
     Returns:
-    - train_LOO (DataFrame): The training DataFrame with NaNs replacing test set interactions.
-    - y_true_LOO (DataFrame): A DataFrame containing the true ratings for the test set.
-    - outliers_rating_movies (DataFrame): A DataFrame containing outliers' ratings for movies in clusters with fewer than 2 movies.
+        pd.DataFrame: LOO train DataFrame with NaNs for validation items.
+        dict: Dictionary mapping user IDs to true ratings in the validation set, grouped by item clusters.
+        dict: Dictionary mapping user IDs to lists of movie IDs in the validation set, grouped by item clusters.
     """
     
-    
-    users = set(data[userId_col_name])
+    users = set(train_df['userId'])
     train_LOO = pd.DataFrame()
-    y_true_LOO = pd.DataFrame()
-    outliers_rating_movies = pd.DataFrame()
-    
-    #for each user I build the clusters of items and for each cluster build train_LOO and test_LOO time sensitive
+    y_true_LOO_df = pd.DataFrame()
+        
+    #for each user i build the clusters of items and for each cluster build train_LOO and test_LOO time sensitive
     for u in users:
         to_clusterize = data[(data[userId_col_name]==u) & (data[rating_col_name].notna())][[rating_col_name, movieId_col_name]]
-        clusters = clusterize_user(to_clusterize, max_n_clusters)
+        clusters=clusterize_user(u, to_clusterize, max_n_clusters, refine_n_clusters = True)
+
         
         items_timestamp = data[data[userId_col_name] == u]
         df = pd.merge(clusters, items_timestamp, on=[movieId_col_name, rating_col_name], how='left')
-        total_movies_by_cluster = df.groupby('cluster_label')[movieId_col_name].count().to_dict()
-        
-        # if the cluster has more than 2 movies
-        representative_clusters = [cluster for cluster, n_movies in total_movies_by_cluster.items() if n_movies>2]
-        df = df[df["cluster_label"].isin(representative_clusters)]
         # get the movies that will be the validation set to fetch the better T0 for each cluster and each user
-        max_timestamp_indices = df.groupby('cluster_label')[time_col_name].idxmax()
-        col_list = ['cluster_label', userId_col_name, movieId_col_name, rating_col_name, time_col_name]
-        y_true_LOO_aux = df.loc[max_timestamp_indices, col_list].sort_values("cluster_label")
+        max_timestamp_movies_idx = df.groupby('cluster_label')[time_col_name].idxmax()
+        col_list = [userId_col_name, movieId_col_name, rating_col_name, time_col_name, 'cluster_label']
+        y_true_LOO_aux = df.loc[max_timestamp_movies_idx, col_list].sort_values("cluster_label")
         # set np.nan for train_LOO
-        y_true_movieid = list(y_true_LOO_aux[movieId_col_name])
+        y_true_LOO_movieid=list(y_true_LOO_aux[movieId_col_name])
         train_df_LOO_aux = df.copy()
-        train_df_LOO_aux.loc[train_df_LOO_aux[movieId_col_name].isin(y_true_movieid), rating_col_name] = np.nan
-
-        #################################### OUTLIERS RATING MOVIES ####################################
-        no_representative_clusters = [cluster for cluster, n_movies in total_movies_by_cluster.items() if n_movies<=2]
-        #if the cluster has less than 2 movies, we 'll use the mean T0 of the user "u".
-        #outliers_dict = {cluster:movieId}
-        outliers_rating_movies_aux = df[df['cluster_label'].isin(no_representative_clusters)][['cluster_label',movieId_col_name]]\
-            .groupby('cluster_label')[movieId_col_name].apply(list)
+        train_df_LOO_aux.loc[train_df_LOO_aux[movieId_col_name].isin(y_true_LOO_movieid), rating_col_name] = np.nan
         
-        train_LOO  = pd.concat([train_LOO, train_df_LOO_aux], axis = 0)
-        y_true_LOO = pd.concat([y_true_LOO, y_true_LOO_aux] , axis = 0)
-        outliers_rating_movies = pd.concat([outliers_rating_movies_aux, train_df_LOO_aux], axis = 0)
-        
-    return train_LOO, y_true_LOO, outliers_rating_movies
-
-
-# def train_test_split(data, userId_col_name="userId" , movieId_col_name = 'movieId', 
-#                            rating_col_name="rating" , time_col_name = "timestamp", 
-#                            proportion_test_set=0.2  , min_overlap = False, 
-#                            min_interactions_users=25, min_interactions_items=35):
-#     """Divide en train y test, mandando a test los registros mas recientes, a partir de la columna 
-#     timestamp COMPLETAR COMPLETAR COMPLETAR
-
-#     Args:
-#         data (_type_): _description_
-#         userId_col_name (str, optional): _description_. Defaults to "userId".
-#         movieId_col_name (str, optional): _description_. Defaults to 'movieId'.
-#         rating_col_name (str, optional): _description_. Defaults to "rating".
-#         time_col_name (str, optional): _description_. Defaults to "timestamp".
-#         proportion_test_set (float, optional): _description_. Defaults to 0.2.
-#         min_overlap (bool, optional): _description_. Defaults to False.
-#         min_interactions_users (int, optional): _description_. Defaults to 25.
-#         min_interactions_items (int, optional): _description_. Defaults to 35.
-
-#     Returns:
-#         _type_: _description_
-#     """
+        train_LOO     = pd.concat([train_LOO, train_df_LOO_aux])
+        y_true_LOO_df = pd.concat([y_true_LOO_df, y_true_LOO_aux]) 
     
-#     user_item_matrix = pd.pivot_table(data,
-#                                 index=userId_col_name,
-#                                 columns=movieId_col_name,
-#                                 values=rating_col_name)
-
-#     # Memorybased CF is very expensive, so we need to prune some data requesting min values of overlapping in users and items.
-#     if min_overlap:
-
-#         item_overlap_idx = user_item_matrix.apply(lambda x: np.sum(x.notna()), axis = 0) >= min_interactions_items
-#         user_overlap_idx = user_item_matrix.apply(lambda x: np.sum(x.notna()), axis = 1) >= min_interactions_users
-
-
-#         user_item_matrix = user_item_matrix.loc[user_overlap_idx, item_overlap_idx]
+    y_true_LOO_by_cluster = y_true_LOO_df.groupby(userId_col_name)[rating_col_name].apply(list).to_dict()
+    test_items_LOO = y_true_LOO_df.groupby(userId_col_name)[movieId_col_name].apply(list).to_dict()
     
-    
-#     y_true = {}
-#     test_items = {}
-    
-#     train_df = user_item_matrix.copy()
-#     test_df = user_item_matrix.copy()
-    
-#     users = list(user_item_matrix.index)
-    
-#     for user in users:
-#         notna_mask = train_df.loc[user, :].notna()
-#         notna_items_idx = list(train_df.loc[user, notna_mask].index)
-        
-#         # at least 1 item in test for each user
-#         test_set_size = max(1, int(len(notna_items_idx)*proportion_test_set))
-        
-#         unsorted_test_candidates = data.loc[(data['userId'] == user) & (data['movieId'].isin(notna_items_idx))]
-        
-#         test_set_idx=list(unsorted_test_candidates.sort_values(time_col_name, ascending=True)["movieId"].values[-test_set_size:])
-        
-#         train_df.loc[user, test_set_idx] = np.nan
-#         y_true[user] = test_df.loc[user, test_set_idx].values
-#         test_items[user] = list(test_df.loc[user, test_set_idx].index)
-    
-
-    
-#     return train_df, y_true, test_items
-
-
-
-
-# def train_test_split(data, userId_col_name="userId" , movieId_col_name = 'movieId', 
-#                            rating_col_name="rating" , time_col_name = "timestamp", 
-#                            proportion_test_set=0.2  , min_overlap = False, 
-#                            min_interactions_users=25, min_interactions_items=35):
-#     """
-#     Splits the input data into training and testing sets for collaborative filter time sensitive
-    
-#     Parameters:
-#     - data (pd.DataFrame): The input DataFrame containing user-item interactions.
-#     - userId_col_name (str): The name of the column representing user IDs.
-#     - movieId_col_name (str): The name of the column representing movie IDs.
-#     - rating_col_name (str): The name of the column representing ratings.
-#     - time_col_name (str): The name of the column representing timestamps.
-#     - proportion_test_set (float): The proportion of items to be included in the test set for each user.
-
-#     Returns:
-#     - train_df (pd.DataFrame): The training set represented as a user-item matrix.
-#     - y_true (dict): A dictionary containing true ratings for each user in the test set.
-#     - test_items (dict): A dictionary containing the list of items in the test set for each user.
-#     """
-    
-#     user_item_matrix = pd.pivot_table(data,
-#                                 index=userId_col_name,
-#                                 columns=movieId_col_name,
-#                                 values=rating_col_name)
-
-#     # Memorybased CF is very expensive, so we need to prune some data requesting min values of overlapping in users and items.
-#     if min_overlap:
-
-#         item_overlap_idx = user_item_matrix.apply(lambda x: np.sum(x.notna()), axis = 0) >= min_interactions_items
-#         user_overlap_idx = user_item_matrix.apply(lambda x: np.sum(x.notna()), axis = 1) >= min_interactions_users
-
-
-#         user_item_matrix = user_item_matrix.loc[user_overlap_idx, item_overlap_idx]
-    
-    
-#     y_true = {}
-#     test_items = {}
-    
-    
-#     train_df = user_item_matrix.copy()
-#     test_df = user_item_matrix.copy()
-    
-#     users = list(user_item_matrix.index)
-    
-#     for user in users:
-#         notna_mask = train_df.loc[user, :].notna()
-#         notna_items_idx = list(train_df.loc[user, notna_mask].index)
-        
-#         # at least 1 item in test for each user
-#         test_set_size = max(1, int(len(notna_items_idx)*proportion_test_set))
-        
-#         unsorted_test_candidates = data.loc[(data['userId'] == user) & (data['movieId'].isin(notna_items_idx))]
-        
-#         test_set_idx=list(unsorted_test_candidates.sort_values(time_col_name, ascending=True)["movieId"].values[-test_set_size:])
-#         train_df.loc[user, test_set_idx] = np.nan
-#         y_true[user] = test_df.loc[user, test_set_idx].values
-#         test_items[user] = list(test_df.loc[user, test_set_idx].index)
-    
-#     return train_df, y_true, test_items
-
-
-# def train_test_split(user_item_matrix, proportion_test_set=0.2, random_seed=1203):
-#     """
-#     Split the user-item interaction matrix into training and test sets for each user.
-
-#     Parameters:
-#     - user_item_matrix (pd.DataFrame): Pandas DataFrame representing the user-item interaction matrix,
-#                                        where rows are users, columns are items, and values indicate
-#                                        user-item interactions (e.g., ratings).
-#     - proportion_test_set (float, optional): Proportion of items to include in the test set for each user.
-#                                             Default is 0.2 (20% of items in the test set).
-#     - random_seed (int, optional): Seed for random number generation for reproducibility. Default is 1203.
-
-#     Returns:
-#     - tuple: A tuple containing:
-#         - pd.DataFrame: Training set with a subset of items set to NaN for each user.
-#         - dict: Dictionary where keys are user IDs, and values are arrays of true ratings from the test set.
-#         - dict: Dictionary where keys are user IDs, and values are lists of items included in the test set.
-
-#     Notes:
-#     - The user_item_matrix should be a Pandas DataFrame.
-#     - The function randomly selects a subset of items for the test set for each user, setting them to NaN in the training set.
-#     - The true ratings from the test set are stored in a dictionary for each user.
-#     - The items included in the test set are stored in a dictionary for each user.
-#     - Proportion of items to include in the test set is determined by the 'proportion_test_set' parameter.
-#     """
-    
-#     y_true = {}
-#     test_items = {}
-    
-#     random.seed(random_seed)
-        
-#     train_df = user_item_matrix.copy()
-#     test_df = user_item_matrix.copy()
-    
-#     users = list(user_item_matrix.index)
-    
-#     for user in users:
-#         notna_mask = train_df.loc[user, :].notna()
-#         notna_items_idx = list(train_df.loc[user, notna_mask].index)
-        
-#         # at least 1 item in test for each user
-#         test_set_size = max(1, int(len(notna_items_idx)*proportion_test_set))
-#         test_set_idx = random.sample(notna_items_idx, test_set_size)
-        
-#         train_df.loc[user, test_set_idx] = np.nan
-#         y_true[user] = test_df.loc[user, test_set_idx].values
-#         test_items[user] = list(test_df.loc[user, test_set_idx].index)
-    
-#     return train_df, y_true, test_items
+    return train_LOO, y_true_LOO_by_cluster, test_items_LOO
