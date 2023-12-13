@@ -60,60 +60,9 @@ def clusterize_user(u, to_clusterize, max_n_clusters, refine_n_clusters = True):
     return clusterized_df
 
 
-def split_scenarios(train_LOO, test_items_LOO, sim):
+def split_cases(train_LOO, test_items_LOO, sim):
     """
-    Assigns scenarios ('sim_count=0', 'sim_count=1', 'sim_count>1') to each row in the training DataFrame based on
-    the count of similar items in the given similarity dict.
-          
-    Parameters:
-        train_LOO (pd.DataFrame): Training DataFrame containing user-item interactions and cluster labels.
-        test_items_LOO (dict): Dictionary mapping user IDs to lists of test items, grouped by item clusters.
-        sim (dict): Dictionary containing item similarities.
-
-    Returns:
-        pd.DataFrame: Updated training DataFrame with an additional 'scenario' column indicating the scenario
-                      based on the count of similar items for each user and cluster.
-    """
-    
-    for u, cluster_test_items_LOO in test_items_LOO.items():
-        for cluster, test_item in enumerate(cluster_test_items_LOO):
-            # Extract cluster items for the user
-            train_items_user_cluster = train_LOO[(train_LOO['cluster_label'] == cluster) & (train_LOO['userId'] == u)]['movieId']
-            
-            # Calculate the count of similar items
-            sim_count = len(set(sim[test_item]) & set(train_items_user_cluster))
-
-            # Assign scenarios based on sim_count
-            if sim_count == 0:
-                # Cold-Star Problem
-                train_LOO.loc[(train_LOO['cluster_label'] == cluster) & (train_LOO['userId'] == u), "escenario"] = 'sim_count=0'
-            elif sim_count == 1:
-                # Only one similarity value
-                train_LOO.loc[(train_LOO['cluster_label'] == cluster) & (train_LOO['userId'] == u), "escenario"] = 'sim_count=1'
-            elif sim_count > 1:
-                # Many similarity values
-                train_LOO.loc[(train_LOO['cluster_label'] == cluster) & (train_LOO['userId'] == u), "escenario"] = 'sim_count>1'
-
-    return train_LOO
-            
-            
-# PSUDOCODE:
-# FOR each user (u) in test_items_LOO:
-#     FOR each item (test_item) in the list associated with user (u):
-#         Get all movie IDs (train_items_user_cluster) for user (u) in the same cluster (cluster) as test_item from train_LOO
-#         Count the number of similar items (sim_count) between test_item and train_items_user_cluster
-#         IF sim_count is equal to 0:
-#             Set the "escenario" of the corresponding row in train_LOO to "sim_count=0"
-#         ELSE IF sim_count is equal to 1:
-#             Set the "escenario" of the corresponding row in train_LOO to "sim_count=1"
-#         ELSE:
-#             Set the "escenario" of the corresponding row in train_LOO to "sim_count>1"
-
-
-
-def split_escenarios(train_LOO, test_items_LOO, sim):
-    """
-    Assigns scenarios ('sim_count=0', 'sim_count=1', 'sim_count>1') to each row in the training DataFrame based on
+    Assigns the  different cases/scenarios ('sim_count=0', 'sim_count=1', 'sim_count>1') to each row in the training DataFrame based on
     the count of similar items in the given similarity matrix.
 
     Parameters:
@@ -122,8 +71,34 @@ def split_escenarios(train_LOO, test_items_LOO, sim):
         sim (dict): Similarity matrix containing item similarities.
 
     Returns:
-        pd.DataFrame: Updated training DataFrame with an additional 'escenario' column indicating the scenario
-                      based on the count of similar items for each user and cluster.
+        train_LOO_cased (pd.DataFrame): Training DataFrame with an additional 'case' column indicating the scenario
+                        based on the count of similar items for each user and cluster.
     """
-
+    train_LOO_cased = train_LOO.copy()
+    train_LOO_cased['case'] = None
+    for u, cluster_test_items_LOO in test_items_LOO.items():
+        for cluster, test_item in enumerate(cluster_test_items_LOO):
+            train_items_user_cluster = train_LOO_cased[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u)]['movieId']
+            sim_count = len(set(sim[test_item]) & set(train_items_user_cluster))
+            
+            if sim_count == 0:
+                train_LOO_cased.loc[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u), "case"] = 'sim_count=0'
+            elif sim_count == 1:
+                train_LOO_cased.loc[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u), "case"] = 'sim_count=1'
+            elif sim_count > 1:
+                train_LOO_cased.loc[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u), "case"] = 'sim_count>1'
+    
+    return train_LOO_cased
+            
+# PSUDOCODE:
+# FOR each user (u) in test_items_LOO:
+#     FOR each item (test_item) in the list associated with user (u):
+#         Get all movie IDs (train_items_user_cluster) for user (u) in the same cluster (cluster) as test_item from train_LOO
+#         Count the number of similar items (sim_count) between test_item and train_items_user_cluster
+#         IF sim_count is equal to 0:
+#             Set the case column of the corresponding row in train_LOO to "sim_count=0"
+#         ELSE IF sim_count is equal to 1:
+#             Set the case column of the corresponding row in train_LOO to "sim_count=1"
+#         ELSE:
+#             Set the case column of the corresponding row in train_LOO to "sim_count>1"
 
