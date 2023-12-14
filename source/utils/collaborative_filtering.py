@@ -119,15 +119,15 @@ class MemoryCollaborativeFilter:
         
         neighbors = self.compute_neighbors(u, i)
         user_ratings_mean = np.mean(self.user_item_matrix, axis=1)
-        norm_rating = self.user_item_matrix.loc[u, :].dropna()[list(neighbors.keys())] - user_ratings_mean[u]
-        num = sum(np.array(list(neighbors.values())) * np.array(norm_rating))
+        neighbors_rating = self.user_item_matrix.loc[u, :].dropna()[list(neighbors.keys())] 
+        num = sum(np.array(list(neighbors.values())) * np.array(neighbors_rating))
         denom = sum(list(neighbors.values()))
         try:
-            hat_rating = user_ratings_mean[u] + num / denom
+            hat_rating =  num / denom
             return hat_rating, user_ratings_mean[u]
         
         except ZeroDivisionError:
-            print(f"Error item Cold-Star Problem: No hay items vecinos del item {i} para estimar el rating")
+            print(f"Warning: Cold-Star problem detected: No neighbors found for item {i} to predict its rating")
             return np.nan, user_ratings_mean[u]
 
 
@@ -148,4 +148,4 @@ class MemoryCollaborativeFilter:
             return rec
         
         except KeyError:
-            print(f"Cold-Star Problem: el usuario {u} no se encuentra registrado")
+            print(f"Warning Cold-Star Problem detected: User {u} is not registered")
