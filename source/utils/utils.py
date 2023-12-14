@@ -62,33 +62,49 @@ def clusterize_user(u, to_clusterize, max_n_clusters, refine_n_clusters = True):
 
 def split_cases(train_LOO, test_items_LOO, sim):
     """
-    Assigns the  different cases/scenarios ('sim_count=0', 'sim_count=1', 'sim_count>1') to each row in the training DataFrame based on
-    the count of similar items in the given similarity matrix.
+    Assigns different cases/scenarios ('sim_count=0', 'sim_count=1', 'sim_count>1') to each row in the training DataFrame based on
+    the count of similar items in the given similarity dictionary.
 
     Parameters:
         train_LOO (pd.DataFrame): Training DataFrame containing user-item interactions and cluster labels.
         test_items_LOO (dict): Dictionary mapping user IDs to lists of test items, grouped by item clusters.
-        sim (dict): Similarity matrix containing item similarities.
+        sim (dict): Dictionary containing item similarities.
 
     Returns:
         train_LOO_cased (pd.DataFrame): Training DataFrame with an additional 'case' column indicating the scenario
                         based on the count of similar items for each user and cluster.
+        test_items_LOO_cased (dict): Dictionary mapping user IDs to dictionaries of test items,
+                             grouped by item clusters, with only the movieId of the clusters of items with sim_count>1.
     """
+    
     train_LOO_cased = train_LOO.copy()
     train_LOO_cased['case'] = None
+    test_items_LOO_cased = {}
+
+    for key, values in test_items_LOO.items():
+        test_items_LOO_cased[key] = {i: value for i, value in enumerate(values)}
+    
     for u, cluster_test_items_LOO in test_items_LOO.items():
         for cluster, test_item in enumerate(cluster_test_items_LOO):
-            train_items_user_cluster = train_LOO_cased[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u)]['movieId']
+            train_items_user_cluster = train_LOO_cased[(train_LOO_cased['cluster_label'] == cluster) & 
+                                                       (train_LOO_cased['userId'] == u)]['movieId']
             sim_count = len(set(sim[test_item]) & set(train_items_user_cluster))
             
             if sim_count == 0:
                 train_LOO_cased.loc[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u), "case"] = 'sim_count=0'
+                # remove the test_items_LOO that not have any sim value between items inside the cluster and the item to predict the rating
+                del test_items_LOO_cased[u][cluster]
             elif sim_count == 1:
                 train_LOO_cased.loc[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u), "case"] = 'sim_count=1'
+                # remove the test_items_LOO that have only one sim value between items inside the cluster and the item to predict the rating
+                del test_items_LOO_cased[u][cluster]
             elif sim_count > 1:
                 train_LOO_cased.loc[(train_LOO_cased['cluster_label'] == cluster) & (train_LOO_cased['userId'] == u), "case"] = 'sim_count>1'
     
-    return train_LOO_cased
+    return train_LOO_cased, test_items_LOO_cased
+
+
+
             
 # PSUDOCODE:
 # FOR each user (u) in test_items_LOO:
