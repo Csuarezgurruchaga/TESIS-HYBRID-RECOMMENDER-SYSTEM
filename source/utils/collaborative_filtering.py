@@ -94,10 +94,12 @@ class MemoryCollaborativeFilter:
 
     def compute_neighbors(self, u, i):
         """
-        Compute the top neighbors of item i for a given user u based on item similarity.
+        Compute the top neighbours of item i for a given user u based on item similarity.
         """
     
-        sim_keys = self.items_similarities[i].keys()
+
+        # if there aren't any neighbors, return an empty key.
+        sim_keys = self.items_similarities.get(i, {}).keys()
         non_nan_mask = None
         try:
             non_nan_mask = self.user_item_matrix.loc[u, :].notna()
@@ -112,10 +114,10 @@ class MemoryCollaborativeFilter:
             sorted_similarities = {k: self.items_similarities[i][k] for k in j}
             # Sort the dictionary based on values in descending order
             sorted_similarities = dict(sorted(sorted_similarities.items(), key=lambda x: x[1], reverse=True))
-            # Select the top neighbors values from the sorted dictionary
-            neighbors_of_i = dict(list(sorted_similarities.items())[:self.n_neighbours])
+            # Select the top neighbours values from the sorted dictionary
+            neighbours_of_i = dict(list(sorted_similarities.items())[:self.n_neighbours])
 
-            return neighbors_of_i
+            return neighbours_of_i
         
         
     def compute_prediction(self, u, i):
@@ -133,7 +135,7 @@ class MemoryCollaborativeFilter:
             return hat_rating, user_ratings_mean[u]
         
         except ZeroDivisionError:
-            print(f"Warning: Cold-Star problem detected: No neighbors found for item {i} to predict its rating")
+            print(f"Warning: Cold-Star problem detected: No neighbours found for item {i} to predict its rating")
             return np.nan, user_ratings_mean[u]
 
 
@@ -606,8 +608,8 @@ class TWMemoryCollaborativeFilter:
         """
         Compute the top neighbors of item i for a given user u based on item similarity.
         """
-
-        sim_keys = self.items_similarities[i].keys()
+        # if there aren't any neighbors, return an empty key.
+        sim_keys = self.items_similarities.get(i, {}).keys()
         non_nan_mask = None
         try:
             non_nan_mask = self.user_item_matrix.loc[u, :].notna()
