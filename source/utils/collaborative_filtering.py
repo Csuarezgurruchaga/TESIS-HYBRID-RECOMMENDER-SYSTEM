@@ -5,8 +5,6 @@ from scipy.spatial.distance import pdist
 from scipy.optimize import minimize_scalar
 from sklearn.metrics import silhouette_score
 from sklearn.cluster import KMeans
-
-
 from .metrics import mean_absolute_error
 
 
@@ -30,7 +28,6 @@ class MemoryCollaborativeFilter:
         self.rating_col_name = rating_col_name
         self.items_similarities = None
         self.user_item_matrix = None
-
 
     def adjusted_cosine_similarity(self, itemA, itemB):
         """
@@ -89,7 +86,6 @@ class MemoryCollaborativeFilter:
         #sort the dict with the values of similarity
         sorted_sim_dict = {k: {inner_key: inner_value for inner_key, inner_value in sorted(v.items(), key=lambda item: item[1], reverse=True) 
                             if inner_key != k} for k, v in similarity_dict.items()}
-
         self.items_similarities = sorted_sim_dict
 
     def compute_neighbors(self, u, i):
@@ -116,9 +112,7 @@ class MemoryCollaborativeFilter:
             sorted_similarities = dict(sorted(sorted_similarities.items(), key=lambda x: x[1], reverse=True))
             # Select the top neighbours values from the sorted dictionary
             neighbours_of_i = dict(list(sorted_similarities.items())[:self.n_neighbours])
-
             return neighbours_of_i
-        
         
     def compute_prediction(self, u, i):
         """
@@ -137,7 +131,6 @@ class MemoryCollaborativeFilter:
         except ZeroDivisionError:
             print(f"Warning: Cold-Star problem detected: No neighbours found for item {i} to predict its rating")
             return np.nan, user_ratings_mean[u]
-
 
     def recommend(self, u, dict_map):
         """
@@ -159,12 +152,6 @@ class MemoryCollaborativeFilter:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
             
             
-            
-
-
-
-
-
 class TWMemoryCollaborativeFilter:
     def __init__(self, min_overlap=5, n_neighbours=35, n_recommendations=10, max_n_clusters = 3, 
                  rescale_parameter = 1e10, refine_n_clusters= True, userId_col_name="userId", movieId_col_name='movieId',
@@ -224,7 +211,6 @@ class TWMemoryCollaborativeFilter:
         self.user_cluster_T0_map_dict = None
         self.train_T0 = None
         # self.cold_star_items = None
-
 
     def adjusted_cosine_similarity(self, itemA, itemB):
         """
@@ -310,7 +296,6 @@ class TWMemoryCollaborativeFilter:
         self.get_T0_by_user_cluster()
         self.build_trainT0()
 
-
     def clusterize_user(self, u, to_clusterize):
         """
         Clusterizes items for a given user based on ratings using KMeans clustering.
@@ -366,8 +351,6 @@ class TWMemoryCollaborativeFilter:
                                         'cluster_label': best_cluster_labels})
         return clusterized_df
     
-    
-    
     def LOO_split_by_cluster(self):
         """
         Splits the data into leave-one-out (LOO) train and validation sets based on item clusters for each user.
@@ -397,7 +380,7 @@ class TWMemoryCollaborativeFilter:
             clusters = self.clusterize_user(u, to_clusterize)
             items_timestamp = self.data[self.data[self.userId_col_name] == u]
             aux_df = pd.merge(clusters, items_timestamp, on=[self.movieId_col_name, self.rating_col_name], how='left')
-
+            
             # get the movies that will be the validation set to fetch the better T0 for each cluster and each user
             max_timestamp_movies_idx = aux_df.groupby('cluster_label')[self.time_col_name].idxmax()
             col_list = [self.userId_col_name, self.movieId_col_name, self.rating_col_name, self.time_col_name, 'cluster_label']
@@ -406,7 +389,6 @@ class TWMemoryCollaborativeFilter:
             y_true_LOO_movieid=list(y_true_LOO_aux[self.movieId_col_name])
             train_df_LOO_aux = aux_df.copy()
             train_df_LOO_aux.loc[train_df_LOO_aux[self.movieId_col_name].isin(y_true_LOO_movieid), self.rating_col_name] = np.nan
-            
             train_LOO     = pd.concat([train_LOO, train_df_LOO_aux])
             y_true_LOO_df = pd.concat([y_true_LOO_df, y_true_LOO_aux]) 
         # transform to dict for mapping after
@@ -415,10 +397,6 @@ class TWMemoryCollaborativeFilter:
         
         #sorting columns in train_LOO
         self.train_LOO = train_LOO[[self.userId_col_name, self.movieId_col_name, self.rating_col_name, self.time_col_name, 'cluster_label']]
-
-
-
-
 
     def classify_scenario(self, train_LOO, test_items_LOO):
         """
@@ -440,7 +418,6 @@ class TWMemoryCollaborativeFilter:
         train_LOO_scenario = train_LOO.copy()
         train_LOO_scenario['scenario'] = None
         test_items_LOO_scenario_sim_count_greater_1 = {}
-        
         for u, cluster_test_items_LOO in test_items_LOO.items():
             test_items_LOO_scenario_sim_count_greater_1[u] = {cluster: item for cluster, item in enumerate(cluster_test_items_LOO)}
             for cluster, test_item in enumerate(cluster_test_items_LOO):
@@ -462,8 +439,6 @@ class TWMemoryCollaborativeFilter:
             self.train_LOO_scenario = train_LOO_scenario
             self.test_items_LOO_scenario_sim_count_greater_1 = test_items_LOO_scenario_sim_count_greater_1
 
-
-
     def get_time_weight_LOO(self, t0, data_by_cluster_user):
         """
         Calculate time weights for that T0 candidate.
@@ -479,7 +454,6 @@ class TWMemoryCollaborativeFilter:
         timestamp = data_by_cluster_user['timestamp'].values
         time_weight = np.exp(-LAMBDA * timestamp / self.rescale_parameter) # reescale
         return time_weight
-
 
     def LOO_prediction(self, u, i, cluster, t0):
         """
@@ -518,9 +492,6 @@ class TWMemoryCollaborativeFilter:
         hat_rating =  num / denom
         return hat_rating, user_ratings_mean
 
-
-
-
     def get_T0_by_user_cluster(self):
         """
         Compute T0 values for each user-cluster pair using the Leave-One-Out (LOO) prediction and optimization.
@@ -553,12 +524,9 @@ class TWMemoryCollaborativeFilter:
                 # Check if the user_id is already in the nested dictionary
                 user_cluster_T0_map_dict[u][cluster] = T0
                 T0_by_user_cluster_df = pd.DataFrame(T0_by_user_cluster)
-                
         self.T0_by_user_cluster_df = T0_by_user_cluster_df
         self.user_cluster_T0_map_dict = user_cluster_T0_map_dict
         
-        
-
     def build_trainT0(self):
         """
         Builds the training set with time-sensitive T0 values that were calculated for each user and cluster.
@@ -593,16 +561,16 @@ class TWMemoryCollaborativeFilter:
         T0_cluster_mean_by_user=self.T0_by_user_cluster_df.groupby(self.userId_col_name)["T0"].mean().to_dict()
 
         # fill T0 for "sim_count = 1" 
-        train_df_T0.loc[train_df_T0["scenario"]=="sim_count=1", "T0"] = train_df_T0[self.userId_col_name].map(T0_cluster_mean_by_user)
-
-        train_df_T0.loc[train_df_T0["scenario"] == "sim_count>1", "T0"] = train_df_T0.apply(lambda row: self.user_cluster_T0_map_dict\
-            .get(row[self.userId_col_name], {}).get(row['cluster_label'], None), axis=1)
-
+        mask1 = train_df_T0["scenario"] == "sim_count=1"
+        mask2 = train_df_T0["scenario"] == "sim_count>1"
+        train_df_T0.loc[mask1, "T0"] = train_df_T0[self.userId_col_name].map(T0_cluster_mean_by_user)
+        train_df_T0.loc[mask2, "T0"] = train_df_T0.apply(lambda row: self.user_cluster_T0_map_dict.get(row[self.userId_col_name], {})\
+            .get(row['cluster_label'], None), axis=1)
+        # only uses items that have sim_count greater than 0 to predict the ratings.
+        train_df_T0 = train_df_T0[train_df_T0['scenarios'] != 'sim_count=0']
         # cleaning auxiliary columns
         train_df_T0.drop(columns=['cluster_label', 'scenario'], inplace = True)
-        
         self.train_T0 = train_df_T0
-        
         
     def compute_neighbors(self, u, i):
         """
@@ -620,7 +588,6 @@ class TWMemoryCollaborativeFilter:
             non_nan_idx = non_nan_mask[non_nan_mask].index
             # from the items that were interacted by user u, give me all the ones that have similarity with the item i
             j = list(set(sim_keys) & set(list(non_nan_idx)))
-            
             # Save the similarities of the items in the dict sorted_similarities
             # Create a dictionary with keys from j and values from sim[i]
             sorted_similarities = {k: self.items_similarities[i][k] for k in j}
@@ -628,10 +595,8 @@ class TWMemoryCollaborativeFilter:
             sorted_similarities = dict(sorted(sorted_similarities.items(), key=lambda x: x[1], reverse=True))
             # Select the top neighbors values from the sorted dictionary
             neighbors_of_i = dict(list(sorted_similarities.items())[:self.n_neighbours])
-
             return neighbors_of_i
 
-    
     def get_time_weight(self, u, i):
         """
         Calculate the final time weights for a given user and item based on their neighbors.
@@ -651,22 +616,16 @@ class TWMemoryCollaborativeFilter:
         neighbours_items = self.compute_neighbors(u, i).keys()
         df_aux = self.train_T0.loc[(self.train_T0[self.userId_col_name] == u) & \
             (self.train_T0[self.movieId_col_name].isin(neighbours_items)),:].copy()
-        
         df_aux.loc[:, self.movieId_col_name] = \
             df_aux[self.movieId_col_name].astype(pd.CategoricalDtype(categories=neighbours_items, ordered=True))
-
         # Sort the DataFrame based on the items neighbours order to be like sim weight
         df_aux = df_aux.sort_values(by=self.movieId_col_name)
         t0 = df_aux["T0"].values
         LAMBDA = 1 / t0
         timestamp = df_aux[self.time_col_name].values
         time_weight = np.exp(-LAMBDA * timestamp / self.rescale_parameter) # reescale
-        
         return time_weight
 
-    
-
-    
     def compute_prediction(self, u, i):
         """
         Predict the rating for a given user and item using time weight memory item collaborative filtering.
@@ -695,10 +654,7 @@ class TWMemoryCollaborativeFilter:
         neighbors = self.compute_neighbors(u, i)
         user_ratings_mean = np.mean(self.user_item_matrix, axis=1)[u]
         neighbors_rating = self.user_item_matrix.loc[u, :].dropna()[list(neighbors.keys())] 
-        
         time_weight = self.get_time_weight(u, i)
-        
-        
         num = sum(np.array(neighbors_rating) * np.array(list(neighbors.values())) * time_weight)
         denom = sum(list(neighbors.values()))
         try:
@@ -734,3 +690,5 @@ class TWMemoryCollaborativeFilter:
         
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
+            
+            
