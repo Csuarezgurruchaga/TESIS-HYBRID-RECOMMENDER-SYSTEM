@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from utils import clusterize_user
+from utils.utils import clusterize_user
 
 """ 
 pros y contras sobre este metodo de split
@@ -15,7 +15,7 @@ comparar teniendo en cuenta el tiempo y no, para mostrar el peso de tener en cue
 def train_test_split(data, userId_col_name="userId", movieId_col_name='movieId',
                      rating_col_name="rating", time_col_name="timestamp",
                      proportion_test_set=0.2, min_overlap=False,
-                     min_interactions_users=25, min_interactions_items=35):
+                     min_interactions_users=25, min_interactions_items=35):  #25 35
     """
     Divide the dataset into training and test sets, reserving the most recent records for testing based on the timestamp column.
 
@@ -32,8 +32,7 @@ def train_test_split(data, userId_col_name="userId", movieId_col_name='movieId',
 
     Returns:
     - train_df (DataFrame): The training DataFrame with NaNs replacing test set interactions.
-    - y_true (dict): A dictionary where keys are user IDs, and values are lists of true ratings for the test set.
-    - test_items (dict): A dictionary where keys are user IDs, and values are lists of movie IDs for the test set.
+    - test (dict): A nested dict where the keys are the user IDs and the item IDs and the value is the true rating assigned by the user.
     """
     
     # Memorybased CF is very expensive, so we need to prune some data requesting min values of overlapping in users and items.
@@ -66,56 +65,13 @@ def train_test_split(data, userId_col_name="userId", movieId_col_name='movieId',
     for u,items in test_items.items():
         train_df.loc[(train_df[userId_col_name] == u) & (train_df[movieId_col_name].isin(items)), rating_col_name] = np.nan
     
-    return train_df, y_true, test_items
-
-
-
-
-
-def LOO_split_by_cluster(data, max_n_clusters=3, userId_col_name = "userId", movieId_col_name="movieId", 
-           time_col_name = "timestamp", rating_col_name = "rating"):
-    """
-    Splits the data into leave-one-out (LOO) train and validation sets based on item clusters for each user.
-
-    Parameters:
-        data (pd.DataFrame): Input DataFrame containing user-item interactions.
-        max_n_clusters (int): Maximum number of clusters to consider for item clustering.
-        userId_col_name (str): Name of the column containing user IDs.
-        movieId_col_name (str): Name of the column containing movie IDs.
-        time_col_name (str): Name of the column containing timestamps.
-        rating_col_name (str): Name of the column containing ratings.
-
-    Returns:
-        pd.DataFrame: LOO train DataFrame with NaNs for validation items.
-        dict: Dictionary mapping user IDs to true ratings in the validation set, grouped by item clusters.
-        dict: Dictionary mapping user IDs to lists of movie IDs in the validation set, grouped by item clusters.
-    """
-    
-    users = set(train_df['userId'])
-    train_LOO = pd.DataFrame()
-    y_true_LOO_df = pd.DataFrame()
+    test = {}
+    for user, items in test_items.items():
+        ratings = y_true.get(user, [])
+        test[user] = {item: rating for item, rating in zip(items, ratings)}
         
-    #for each user i build the clusters of items and for each cluster build train_LOO and test_LOO time sensitive
-    for u in users:
-        to_clusterize = data[(data[userId_col_name]==u) & (data[rating_col_name].notna())][[rating_col_name, movieId_col_name]]
-        clusters=clusterize_user(u, to_clusterize, max_n_clusters, refine_n_clusters = True)
+    return train_df, test
+    
 
-        
-        items_timestamp = data[data[userId_col_name] == u]
-        df = pd.merge(clusters, items_timestamp, on=[movieId_col_name, rating_col_name], how='left')
-        # get the movies that will be the validation set to fetch the better T0 for each cluster and each user
-        max_timestamp_movies_idx = df.groupby('cluster_label')[time_col_name].idxmax()
-        col_list = [userId_col_name, movieId_col_name, rating_col_name, time_col_name, 'cluster_label']
-        y_true_LOO_aux = df.loc[max_timestamp_movies_idx, col_list].sort_values("cluster_label")
-        # set np.nan for train_LOO
-        y_true_LOO_movieid=list(y_true_LOO_aux[movieId_col_name])
-        train_df_LOO_aux = df.copy()
-        train_df_LOO_aux.loc[train_df_LOO_aux[movieId_col_name].isin(y_true_LOO_movieid), rating_col_name] = np.nan
-        
-        train_LOO     = pd.concat([train_LOO, train_df_LOO_aux])
-        y_true_LOO_df = pd.concat([y_true_LOO_df, y_true_LOO_aux]) 
-    
-    y_true_LOO_by_cluster = y_true_LOO_df.groupby(userId_col_name)[rating_col_name].apply(list).to_dict()
-    test_items_LOO = y_true_LOO_df.groupby(userId_col_name)[movieId_col_name].apply(list).to_dict()
-    
-    return train_LOO, y_true_LOO_by_cluster, test_items_LOO
+
+
