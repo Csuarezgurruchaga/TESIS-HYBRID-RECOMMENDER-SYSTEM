@@ -9,9 +9,8 @@ from .metrics import mean_absolute_error
 
 
 class MemoryCollaborativeFilter:
-    def __init__(self, min_overlap=5, n_neighbours=35, n_recommendations=10, 
-                 userId_col_name="userId", movieId_col_name='movieId',
-                 rating_col_name="rating"):
+    def __init__(self, min_overlap=5, n_neighbours=35, userId_col_name="userId", 
+                 movieId_col_name='movieId', rating_col_name="rating"):
         """
         Initialize the MemoryCollaborativeFilter object with specified parameters.
 
@@ -22,7 +21,6 @@ class MemoryCollaborativeFilter:
         """
         self.min_overlap = min_overlap
         self.n_neighbours = n_neighbours
-        self.n_recommendations = n_recommendations
         self.userId_col_name = userId_col_name
         self.movieId_col_name = movieId_col_name
         self.rating_col_name = rating_col_name
@@ -131,30 +129,72 @@ class MemoryCollaborativeFilter:
         except ZeroDivisionError:
             print(f"Warning: Cold-Star problem detected: No neighbours found for item {i} to predict its rating")
             return np.nan, user_ratings_mean[u]
+            
+    def recommend(self, u, dict_map, test_items = None, n_recommendations=10):
+        """     
+        Generate top n recommendations for a given user based on time-weighted item collaborative filtering.
 
-    def recommend(self, u, dict_map):
-        """
-        Generate top n recommendations for a given user based on item collaborative filtering.
-        """
+        Parameters:
+        - u (int): User ID.
+        - dict_map (dict): Dictionary mapping internal item IDs to external item IDs.
+        - test_items (list, optional): List of movies IDs set for test. Defaults to None.
+        - n_recommendations (int): Number of top recommendations to generate.
 
+        Returns:
+        - rec (list): List of top n recommended item IDs for the specified user.
+        
+        If the method receives `test_items`, it enters test mode and generates recommendations based on the provided list
+        of movies IDs, in this mode it returns the ids of the movies that are recommended. Otherwise, it generates 
+        recommendations based on the items that the user has not interacted with before.
+        """
         try :
             rating_predictions = {}
             items_to_predict = list(self.user_item_matrix.loc[u, self.user_item_matrix.loc[u, :].isna()].index)
+            
+            #if the method receives test_items, it enters test mode.
+            if test_items is not None:
+                items_to_predict = test_items[u]
+                for i in items_to_predict:
+                    rating_predictions[i] = self.compute_prediction(u, i)
+
+                    all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
+                    recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
+                return recommendations_ids
+            
             for i in items_to_predict:
                 rating_predictions[i] = self.compute_prediction(u, i)
 
             all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
-            n_recommendations = [k for k, _ in list(all_recommendations.items())[:self.n_recommendations]]
-            rec = [dict_map[item] for item in n_recommendations]
+            recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
+            rec = [dict_map[item] for item in recommendations_ids]
             return rec
         
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
-            
-            
+
+
+    # def recommend(self, u, dict_map):
+    #     """
+    #     Generate top n recommendations for a given user based on item collaborative filtering.
+    #     """
+
+    #     try :
+    #         rating_predictions = {}
+    #         items_to_predict = list(self.user_item_matrix.loc[u, self.user_item_matrix.loc[u, :].isna()].index)
+    #         for i in items_to_predict:
+    #             rating_predictions[i] = self.compute_prediction(u, i)
+
+    #         all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
+    #         n_recommendations = [k for k, _ in list(all_recommendations.items())[:self.n_recommendations]]
+    #         rec = [dict_map[item] for item in n_recommendations]
+    #         return rec
+        
+    #     except KeyError:
+    #         print(f"Warning Cold-Star Problem detected: User {u} is not registered")
+
 class TWMemoryCollaborativeFilter:
-    def __init__(self, min_overlap=5, n_neighbours=35, n_recommendations=10, max_n_clusters = 3, 
-                 rescale_parameter = 1e10, refine_n_clusters= True, userId_col_name="userId", movieId_col_name='movieId',
+    def __init__(self, min_overlap=5, n_neighbours=35, max_n_clusters = 3, rescale_parameter = 1e10, 
+                 refine_n_clusters= True, userId_col_name="userId", movieId_col_name='movieId', 
                  rating_col_name="rating", time_col_name = 'timestamp'):
         """
         Initialize the TWMemoryCollaborativeFilter object with specified parameters.
@@ -174,7 +214,6 @@ class TWMemoryCollaborativeFilter:
         Attributes:
         - min_overlap (int): Minimum number of overlapping users required for similarity calculation.
         - n_neighbours (int): Number of neighbors to consider in collaborative filtering.
-        - n_recommendations (int): Number of top recommendations to generate.
         - userId_col_name (str): Name of the column containing user IDs in the input data.
         - movieId_col_name (str): Name of the column containing movie IDs in the input data.
         - rating_col_name (str): Name of the column containing ratings in the input data.
@@ -190,7 +229,6 @@ class TWMemoryCollaborativeFilter:
     
         self.min_overlap = min_overlap
         self.n_neighbours = n_neighbours
-        self.n_recommendations = n_recommendations
         self.userId_col_name = userId_col_name
         self.movieId_col_name = movieId_col_name
         self.rating_col_name = rating_col_name
@@ -567,7 +605,7 @@ class TWMemoryCollaborativeFilter:
         train_df_T0.loc[mask2, "T0"] = train_df_T0.apply(lambda row: self.user_cluster_T0_map_dict.get(row[self.userId_col_name], {})\
             .get(row['cluster_label'], None), axis=1)
         # only uses items that have sim_count greater than 0 to predict the ratings.
-        train_df_T0 = train_df_T0[train_df_T0['scenarios'] != 'sim_count=0']
+        train_df_T0 = train_df_T0[train_df_T0['scenario'] != 'sim_count=0']
         # cleaning auxiliary columns
         train_df_T0.drop(columns=['cluster_label', 'scenario'], inplace = True)
         self.train_T0 = train_df_T0
@@ -658,37 +696,52 @@ class TWMemoryCollaborativeFilter:
         num = sum(np.array(neighbors_rating) * np.array(list(neighbors.values())) * time_weight)
         denom = sum(list(neighbors.values()))
         try:
-            hat_rating =  num / denom
+            hat_rating = num / denom
             return hat_rating, user_ratings_mean
         
         except ZeroDivisionError:
             print(f"Warning: Cold-Star problem detected: No neighbors found for item {i} to predict its rating")
             return np.nan, user_ratings_mean
     
-    def recommend(self, u, dict_map):
-        """
+    def recommend(self, u, dict_map, test_items = None, n_recommendations = 10):
+        """     
         Generate top n recommendations for a given user based on time-weighted item collaborative filtering.
 
         Parameters:
         - u (int): User ID.
         - dict_map (dict): Dictionary mapping internal item IDs to external item IDs.
+        - test_items (list, optional): List of movies IDs set for test. Defaults to None.
+        - n_recommendations (int): Number of top recommendations to generate.
 
         Returns:
         - rec (list): List of top n recommended item IDs for the specified user.
+        
+        If the method receives `test_items`, it enters test mode and generates recommendations based on the provided list
+        of movies IDs, in this mode it returns the ids of the movies that are recommended. Otherwise, it generates 
+        recommendations based on the items that the user has not interacted with before.
         """
-
         try :
             rating_predictions = {}
             items_to_predict = list(self.user_item_matrix.loc[u, self.user_item_matrix.loc[u, :].isna()].index)
+            
+            #if the method receives test_items, it enters test mode.
+            if test_items is not None:
+                items_to_predict = test_items[u]
+                for i in items_to_predict:
+                    rating_predictions[i] = self.compute_prediction(u, i)
+
+                    all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
+                    recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
+                return recommendations_ids
+            
             for i in items_to_predict:
                 rating_predictions[i] = self.compute_prediction(u, i)
 
             all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
-            n_recommendations = [k for k, _ in list(all_recommendations.items())[:self.n_recommendations]]
-            rec = [dict_map[item] for item in n_recommendations]
+            recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
+            rec = [dict_map[item] for item in recommendations_ids]
             return rec
         
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
-            
-            
+    
