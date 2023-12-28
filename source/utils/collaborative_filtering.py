@@ -596,7 +596,7 @@ class TWMemoryCollaborativeFilter:
                                                                             self.time_col_name])
 
         # find T0 value for items with sim_count = 1, using "T0 cluster mean" strategy
-        T0_cluster_mean_by_user=self.T0_by_user_cluster_df.groupby(self.userId_col_name)["T0"].mean().to_dict()
+        T0_cluster_mean_by_user = self.T0_by_user_cluster_df.groupby(self.userId_col_name)["T0"].mean().to_dict()
 
         # fill T0 for "sim_count = 1" 
         mask1 = train_df_T0["scenario"] == "sim_count=1"
@@ -604,7 +604,10 @@ class TWMemoryCollaborativeFilter:
         train_df_T0.loc[mask1, "T0"] = train_df_T0[self.userId_col_name].map(T0_cluster_mean_by_user)
         train_df_T0.loc[mask2, "T0"] = train_df_T0.apply(lambda row: self.user_cluster_T0_map_dict.get(row[self.userId_col_name], {})\
             .get(row['cluster_label'], None), axis=1)
-        # only uses items that have sim_count greater than 0 to predict the ratings.
+        # users with sim_cout = 1 and that don't have any T0 value to use for mean strategy are removed
+        users_without_T0 = set(self.train_LOO_scenario[self.userId_col_name]) - set(self.T0_by_user_cluster_df.groupby(self.userId_col_name)["T0"].mean().to_dict().keys())
+        train_df_T0 = train_df_T0[~train_df_T0[self.userId_col_name].isin(users_without_T0)]
+        # only use items that have sim_count greater than 0 to predict the ratings.
         train_df_T0 = train_df_T0[train_df_T0['scenario'] != 'sim_count=0']
         # cleaning auxiliary columns
         train_df_T0.drop(columns=['cluster_label', 'scenario'], inplace = True)
