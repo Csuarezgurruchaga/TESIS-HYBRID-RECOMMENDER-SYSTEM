@@ -172,30 +172,10 @@ class MemoryCollaborativeFilter:
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
 
-
-    # def recommend(self, u, dict_map):
-    #     """
-    #     Generate top n recommendations for a given user based on item collaborative filtering.
-    #     """
-
-    #     try :
-    #         rating_predictions = {}
-    #         items_to_predict = list(self.user_item_matrix.loc[u, self.user_item_matrix.loc[u, :].isna()].index)
-    #         for i in items_to_predict:
-    #             rating_predictions[i] = self.compute_prediction(u, i)
-
-    #         all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
-    #         n_recommendations = [k for k, _ in list(all_recommendations.items())[:self.n_recommendations]]
-    #         rec = [dict_map[item] for item in n_recommendations]
-    #         return rec
-        
-    #     except KeyError:
-    #         print(f"Warning Cold-Star Problem detected: User {u} is not registered")
-
 class TWMemoryCollaborativeFilter:
-    def __init__(self, min_overlap=5, n_neighbours=35, max_n_clusters = 3, rescale_parameter = 1e10, 
+    def __init__(self, min_overlap=5, n_neighbours=35, max_n_clusters = 3, rescale_parameter = 1e9, 
                  refine_n_clusters= True, userId_col_name="userId", movieId_col_name='movieId', 
-                 rating_col_name="rating", time_col_name = 'timestamp'):
+                 rating_col_name="rating", time_col_name = 'timestamp', verbose = False, random_state = 1203):
         """
         Initialize the TWMemoryCollaborativeFilter object with specified parameters.
 
@@ -210,6 +190,8 @@ class TWMemoryCollaborativeFilter:
         - movieId_col_name (str): Name of the column containing movie IDs in the input data.
         - rating_col_name (str): Name of the column containing ratings in the input data.
         - time_col_name (str): Name of the column containing timestamps in the input data.
+        - verbose (bool): If True, provides detailed information about the process.
+        - random_state (int): Used for deterministic results.
 
         Attributes:
         - min_overlap (int): Minimum number of overlapping users required for similarity calculation.
@@ -236,6 +218,8 @@ class TWMemoryCollaborativeFilter:
         self.max_n_clusters = max_n_clusters
         self.refine_n_clusters = refine_n_clusters
         self.rescale_parameter = rescale_parameter
+        self.verbose = verbose
+        self.random_state = random_state
 
         self.items_similarities = None
         self.user_item_matrix = None
@@ -277,7 +261,7 @@ class TWMemoryCollaborativeFilter:
 
     def fit(self, data):
         """
-        Fits the TWMemoryCollaborativeFilter model to the provided user-item interaction data.
+        Fits the TWMemoryCollaborativeFilter model to the provided user-item interaction data considering the time.
 
         Parameters:
             data (pd.DataFrame): Input DataFrame containing user-item interactions with ratings and timestamps.
@@ -326,14 +310,16 @@ class TWMemoryCollaborativeFilter:
         #sort the dict with the values of similarity
         sorted_sim_dict = {k: {inner_key: inner_value for inner_key, inner_value in sorted(v.items(), key=lambda item: item[1], reverse=True) 
                             if inner_key != k} for k, v in similarity_dict.items()}
-
         self.items_similarities = sorted_sim_dict
-        
+        # for each user split the items in clusters using the ratings.
         self.LOO_split_by_cluster()
+        # build different scenarios for each item's cluster
         self.classify_scenario(self.train_LOO, self.test_items_LOO)
+        # considering the scenario of that item and that user find the T0 value.
         self.get_T0_by_user_cluster()
+        # build the final dataset UxIxT0
         self.build_trainT0()
-
+        
     def clusterize_user(self, u, to_clusterize):
         """
         Clusterizes items for a given user based on ratings using KMeans clustering.
@@ -354,24 +340,25 @@ class TWMemoryCollaborativeFilter:
             sil_scores = {}
             for n_clusters in n_clusters_range:
                 # Create and fit KMeans model
-                kmeans = KMeans(n_clusters=n_clusters, random_state=1203, n_init = 'auto')
-                cluster_labels = kmeans.fit_predict(np.array(to_clusterize['rating']).reshape(-1, 1))
+                kmeans = KMeans(n_clusters=n_clusters, random_state=self.random_state, n_init = 'auto')
+                cluster_labels = kmeans.fit_predict(np.array(to_clusterize[self.rating_col_name]).reshape(-1, 1))
                 
                 # Calculate Silhouette Score
-                if len(set(cluster_labels))>1:
-                    sil_score = silhouette_score(np.array(to_clusterize['rating']).reshape(-1, 1), cluster_labels)
+                if len(set(cluster_labels)) > 1:
+                    sil_score = silhouette_score(np.array(to_clusterize[self.rating_col_name]).reshape(-1, 1), cluster_labels)
                     sil_scores[n_clusters] = sil_score
 
                     # Find the best number of clusters
                     best_n_clusters = max(sil_scores, key=sil_scores.get)
             
-            if len(set(cluster_labels))==1:
+            if len(set(cluster_labels)) == 1:
                 # the user rated similarly all the movies that he saw.
                 best_n_clusters = 1
-                print(f"n_clusters for user {u} is 1, the user rated similarly all the movies that he saw.")
+                if self.verbose:
+                    print(f"n_clusters for user {u} is 1, the user rated similarly all the movies that he saw.")
                     
             # Create and fit KMeans model with the best number of clusters
-            best_kmeans = KMeans(n_clusters=best_n_clusters, random_state=1203, n_init = 'auto')
+            best_kmeans = KMeans(n_clusters=best_n_clusters, random_state=self.random_state, n_init = 'auto')
             best_cluster_labels = best_kmeans.fit_predict(np.array(to_clusterize[self.rating_col_name]).reshape(-1, 1))
 
             clusterized_df = pd.DataFrame({self.movieId_col_name: to_clusterize[self.movieId_col_name].values,
@@ -381,7 +368,7 @@ class TWMemoryCollaborativeFilter:
         
         # if refine_n_clusters is False, the computation cost its reduced and the number of clusters is
         # set as max_n_clusters
-        best_kmeans = KMeans(n_clusters = self.max_n_clusters, random_state=1203, n_init = 'auto')
+        best_kmeans = KMeans(n_clusters = self.max_n_clusters, random_state=self.random_state, n_init = 'auto')
         best_cluster_labels = best_kmeans.fit_predict(np.array(to_clusterize['rating']).reshape(-1, 1))
 
         clusterized_df = pd.DataFrame({'movieId': to_clusterize['movieId'].values,
@@ -406,7 +393,7 @@ class TWMemoryCollaborativeFilter:
         - The results are stored in the instance attributes self.train_LOO, self.y_true_LOO_by_cluster, and self.test_items_LOO.
         """
         
-        users = set(self.data['userId'])
+        users = set(self.data[self.userId_col_name])
         train_LOO = pd.DataFrame()
         y_true_LOO_df = pd.DataFrame()
             
@@ -545,15 +532,23 @@ class TWMemoryCollaborativeFilter:
                 # Define the objective function to minimize
                 def objective_function(T0_candidate):
                     hat_rating = self.LOO_prediction(u, i, cluster, T0_candidate)[0]
+                    
+                    #borrar borrar
                     mae = mean_absolute_error(self.y_true_LOO_by_cluster[u][cluster], hat_rating)
                     return mae
+                    #borrar borrar
+                    
+                    # mse = mean_squared_error(self.y_true_LOO_by_cluster[u][cluster], hat_rating)
+                    # return mse
+                    
+                    
                 # lower and upper bounds for T0 candidates
                 lower_bound_T0 = 10
                 upper_bound_T0 = 200
 
                 result = minimize_scalar(objective_function, bounds=(lower_bound_T0, upper_bound_T0))
                 T0 = result.x
-                user_cluster_t0_dict = {'userId': u, 'movieId':i, 'cluster_label': cluster, 'T0': T0}
+                user_cluster_t0_dict = {self.userId_col_name: u, self.movieId_col_name:i, 'cluster_label': cluster, 'T0': T0}
                 T0_by_user_cluster.append(user_cluster_t0_dict)
                 
                 # crafting user_cluster_T0_map_dict to map T0 value
@@ -604,11 +599,6 @@ class TWMemoryCollaborativeFilter:
         train_df_T0.loc[mask1, "T0"] = train_df_T0[self.userId_col_name].map(T0_cluster_mean_by_user)
         train_df_T0.loc[mask2, "T0"] = train_df_T0.apply(lambda row: self.user_cluster_T0_map_dict.get(row[self.userId_col_name], {})\
             .get(row['cluster_label'], None), axis=1)
-        # users with sim_cout = 1 and that don't have any T0 value to use for mean strategy are removed
-        users_without_T0 = set(self.train_LOO_scenario[self.userId_col_name]) - set(self.T0_by_user_cluster_df.groupby(self.userId_col_name)["T0"].mean().to_dict().keys())
-        train_df_T0 = train_df_T0[~train_df_T0[self.userId_col_name].isin(users_without_T0)]
-        # only use items that have sim_count greater than 0 to predict the ratings.
-        train_df_T0 = train_df_T0[train_df_T0['scenario'] != 'sim_count=0']
         # cleaning auxiliary columns
         train_df_T0.drop(columns=['cluster_label', 'scenario'], inplace = True)
         self.train_T0 = train_df_T0
@@ -623,7 +613,8 @@ class TWMemoryCollaborativeFilter:
         try:
             non_nan_mask = self.user_item_matrix.loc[u, :].notna()
         except IndexError:
-            print(f"Error: User {u} is not registered")
+            if self.verbose:
+                print(f"Error: User {u} is not registered")
             
         if non_nan_mask is not None:
             non_nan_idx = non_nan_mask[non_nan_mask].index
@@ -696,6 +687,8 @@ class TWMemoryCollaborativeFilter:
         user_ratings_mean = np.mean(self.user_item_matrix, axis=1)[u]
         neighbors_rating = self.user_item_matrix.loc[u, :].dropna()[list(neighbors.keys())] 
         time_weight = self.get_time_weight(u, i)
+        if np.isnan(time_weight).all() & self.verbose:
+            print(f"Warning: T0 Cold-Star problem detected: user {u} has sim_cout = 1 and don't have any T0 value to use for mean strategy")
         num = sum(np.array(neighbors_rating) * np.array(list(neighbors.values())) * time_weight)
         denom = sum(list(neighbors.values()))
         try:
@@ -706,13 +699,13 @@ class TWMemoryCollaborativeFilter:
             print(f"Warning: Cold-Star problem detected: No neighbors found for item {i} to predict its rating")
             return np.nan, user_ratings_mean
     
-    def recommend(self, u, dict_map, test_items = None, n_recommendations = 10):
+    def recommend(self, u, dict_map=None, test_items=None, n_recommendations=10):
         """     
         Generate top n recommendations for a given user based on time-weighted item collaborative filtering.
 
         Parameters:
         - u (int): User ID.
-        - dict_map (dict): Dictionary mapping internal item IDs to external item IDs.
+        - dict_map (dict): Dictionary mapping internal item IDs to external item IDs. Not used in test mode.
         - test_items (list, optional): List of movies IDs set for test. Defaults to None.
         - n_recommendations (int): Number of top recommendations to generate.
 
@@ -722,6 +715,8 @@ class TWMemoryCollaborativeFilter:
         If the method receives `test_items`, it enters test mode and generates recommendations based on the provided list
         of movies IDs, in this mode it returns the ids of the movies that are recommended. Otherwise, it generates 
         recommendations based on the items that the user has not interacted with before.
+        
+        Note: In test mode, the method dont use the dict_map hiperparameter.
         """
         try :
             rating_predictions = {}
