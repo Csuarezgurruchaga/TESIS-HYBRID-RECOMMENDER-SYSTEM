@@ -51,7 +51,8 @@ def mean_squared_error(y_true, y_pred):
     Returns:
     - float: Mean Squared Error.
     """
-    assert len(y_true) == len(y_pred), "Input arrays must have the same length."
+    if type(y_true) != float and type(y_pred) != float:
+        assert len(y_true) == len(y_pred), "Input arrays must have the same length."
     return np.mean(np.square(np.subtract(y_true, y_pred)))
 
 def root_mean_squared_error(y_true, y_pred):
@@ -82,5 +83,3 @@ def recall(y_true, y_pred, k):
 
 # Otro problema que tiene es que no toma en cuenta el orden en que fueron devueltos los items en la recomendacion. La metrica asigna el mismo 
 # resultado, sin importar el orden del Top N. 
-
-# Para nuestro caso, nos interesa que el usuario encuentre 
