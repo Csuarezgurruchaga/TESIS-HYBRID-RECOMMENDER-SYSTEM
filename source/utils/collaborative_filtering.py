@@ -9,7 +9,7 @@ from .metrics import mean_absolute_error
 
 
 class MemoryCollaborativeFilter:
-    def __init__(self, min_overlap=5, n_neighbours=35, userId_col_name="userId", 
+    def __init__(self, min_overlap=5, n_neighbours=40, userId_col_name="userId", 
                  movieId_col_name='movieId', rating_col_name="rating"):
         """
         Initialize the MemoryCollaborativeFilter object with specified parameters.
@@ -173,7 +173,7 @@ class MemoryCollaborativeFilter:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
 
 class TWMemoryCollaborativeFilter:
-    def __init__(self, min_overlap=5, n_neighbours=35, max_n_clusters = 3, rescale_parameter = 1e9, 
+    def __init__(self, min_overlap=5, n_neighbours=40, max_n_clusters=3, rescale_parameter=1e9, 
                  refine_n_clusters= True, userId_col_name="userId", movieId_col_name='movieId', 
                  rating_col_name="rating", time_col_name = 'timestamp', verbose = False, random_state = 1203):
         """
@@ -696,7 +696,8 @@ class TWMemoryCollaborativeFilter:
             return hat_rating, user_ratings_mean
         
         except ZeroDivisionError:
-            print(f"Warning: Cold-Star problem detected: No neighbors found for item {i} to predict its rating")
+            if self.verbose:
+                print(f"Warning: Cold-Star problem detected: No neighbours found for item {i} to predict its rating for user {u}")
             return np.nan, user_ratings_mean
     
     def recommend(self, u, dict_map=None, test_items=None, n_recommendations=10):
