@@ -130,13 +130,13 @@ class MemoryCollaborativeFilter:
             print(f"Warning: Cold-Star problem detected: No neighbours found for item {i} to predict its rating")
             return np.nan, user_ratings_mean[u]
             
-    def recommend(self, u, dict_map, test_items = None, n_recommendations=10):
+    def recommend(self, u, dict_map=None, test_items=None, n_recommendations=10):
         """     
         Generate top n recommendations for a given user based on time-weighted item collaborative filtering.
 
         Parameters:
         - u (int): User ID.
-        - dict_map (dict): Dictionary mapping internal item IDs to external item IDs.
+        - dict_map (dict): Dictionary mapping internal item IDs to external item IDs. Defaults to None.
         - test_items (list, optional): List of movies IDs set for test. Defaults to None.
         - n_recommendations (int): Number of top recommendations to generate.
 
@@ -181,7 +181,7 @@ class TWMemoryCollaborativeFilter:
 
         Parameters:
         - min_overlap (int): Minimum number of overlapping users required for similarity calculation.
-        - n_neighbours (int): Number of neighbors to consider in collaborative filtering.
+        - n_neighbours (int): Number of neighbors to consider in collaborative filtering. A number of neighbors between 20 to 50 is most often recommended.
         - n_recommendations (int): Number of top recommendations to generate.
         - max_n_clusters (int): Maximum number of clusters to consider. A larger number may result in overfitting.
         - rescale_parameter (float): Rescaling parameter for time-weighted calculations.
