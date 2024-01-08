@@ -284,6 +284,13 @@ class TWMemoryCollaborativeFilter:
         assert isinstance(data, pd.DataFrame), "user_item_matrix should be a Pandas DataFrame."
         
         self.data = data
+
+        # scaling timestamps for each user in days based on their first interaction with the system.
+        self.data[self.time_col_name] = pd.to_datetime(self.data[self.time_col_name], unit='s')
+        self.data['initial_timestamp'] = self.data.groupby(self.userId_col_name)[self.time_col_name].transform('min')
+        self.data[self.time_col_name] = (self.data[self.time_col_name] - self.data['initial_timestamp']).dt.total_seconds() / (24 * 3600)
+        self.data = self.data.drop(columns=['initial_timestamp'])
+
         
         # Transform data to UxI matrix
         self.user_item_matrix = pd.pivot_table(data,
