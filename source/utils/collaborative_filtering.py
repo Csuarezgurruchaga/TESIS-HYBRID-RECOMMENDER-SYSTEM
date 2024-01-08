@@ -438,6 +438,17 @@ class TWMemoryCollaborativeFilter:
                             based on the count of similar items for each user and cluster.
             self.test_items_LOO_scenario_sim_count_greater_1 (dict): Dictionary mapping user IDs to dictionaries of test items,
                                 grouped by item clusters, with only the movieId of the clusters of items with sim_count>1.
+        Psudocode:
+        FOR each user (u) in test_items_LOO:
+            FOR each item (test_item) in the list associated with user (u):
+                Get all movie IDs (train_items_user_cluster) for user (u) in the same cluster (cluster) as test_item from train_LOO
+                Count the number of similar items (sim_count) between test_item and train_items_user_cluster
+                IF sim_count is equal to 0:
+                    Set the case column of the corresponding row in train_LOO to "sim_count=0"
+                ELSE IF sim_count is equal to 1:
+                    Set the case column of the corresponding row in train_LOO to "sim_count=1"
+                ELSE:
+                    Set the case column of the corresponding row in train_LOO to "sim_count>1"
         """
         
         train_LOO_scenario = train_LOO.copy()
@@ -532,19 +543,11 @@ class TWMemoryCollaborativeFilter:
                 # Define the objective function to minimize
                 def objective_function(T0_candidate):
                     hat_rating = self.LOO_prediction(u, i, cluster, T0_candidate)[0]
-                    
-                    #borrar borrar
                     mae = mean_absolute_error(self.y_true_LOO_by_cluster[u][cluster], hat_rating)
                     return mae
-                    #borrar borrar
-                    
-                    # mse = mean_squared_error(self.y_true_LOO_by_cluster[u][cluster], hat_rating)
-                    # return mse
-                    
-                    
                 # lower and upper bounds for T0 candidates
-                lower_bound_T0 = 10
-                upper_bound_T0 = 200
+                lower_bound_T0 = 1e3
+                upper_bound_T0 = 5e3
 
                 result = minimize_scalar(objective_function, bounds=(lower_bound_T0, upper_bound_T0))
                 T0 = result.x
@@ -690,7 +693,7 @@ class TWMemoryCollaborativeFilter:
         if np.isnan(time_weight).all() & self.verbose:
             print(f"Warning: T0 Cold-Star problem detected: user {u} has sim_cout = 1 and don't have any T0 value to use for mean strategy")
         num = sum(np.array(neighbors_rating) * np.array(list(neighbors.values())) * time_weight)
-        denom = sum(list(neighbors.values()))
+        denom = sum(list(neighbors.values()) * time_weight)
         try:
             hat_rating = num / denom
             return hat_rating, user_ratings_mean
@@ -743,4 +746,3 @@ class TWMemoryCollaborativeFilter:
         
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
-    
