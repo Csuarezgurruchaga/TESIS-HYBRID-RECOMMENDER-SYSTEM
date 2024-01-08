@@ -173,7 +173,7 @@ class MemoryCollaborativeFilter:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
 
 class TWMemoryCollaborativeFilter:
-    def __init__(self, min_overlap=5, n_neighbours=40, max_n_clusters=3, rescale_parameter=1e9, 
+    def __init__(self, min_overlap=5, n_neighbours=40, max_n_clusters=3, 
                  refine_n_clusters= True, userId_col_name="userId", movieId_col_name='movieId', 
                  rating_col_name="rating", time_col_name = 'timestamp', verbose = False, random_state = 1203):
         """
@@ -184,7 +184,6 @@ class TWMemoryCollaborativeFilter:
         - n_neighbours (int): Number of neighbors to consider in collaborative filtering. A number of neighbors between 20 to 50 is most often recommended.
         - n_recommendations (int): Number of top recommendations to generate.
         - max_n_clusters (int): Maximum number of clusters to consider. A larger number may result in overfitting.
-        - rescale_parameter (float): Rescaling parameter for time-weighted calculations.
         - refine_n_clusters (bool): If True, refines the number of clusters based on silhouette scores.
         - userId_col_name (str): Name of the column containing user IDs in the input data.
         - movieId_col_name (str): Name of the column containing movie IDs in the input data.
@@ -207,6 +206,7 @@ class TWMemoryCollaborativeFilter:
         - user_item_matrix (pd.DataFrame): User-item matrix representation of the input data.
         - data (pd.DataFrame): Original input data used to train the collaborative filter.
         - train_LOO (pd.DataFrame): Leave-One-Out train set with NaN ratings for validation movies.
+        - sim_count_0_user_item(dict): userId and movieId for the items that cannot compute the prediction of T0
         """
     
         self.min_overlap = min_overlap
@@ -217,7 +217,6 @@ class TWMemoryCollaborativeFilter:
         self.time_col_name = time_col_name
         self.max_n_clusters = max_n_clusters
         self.refine_n_clusters = refine_n_clusters
-        self.rescale_parameter = rescale_parameter
         self.verbose = verbose
         self.random_state = random_state
 
@@ -232,7 +231,7 @@ class TWMemoryCollaborativeFilter:
         self.T0_by_user_cluster_df = None
         self.user_cluster_T0_map_dict = None
         self.train_T0 = None
-        # self.cold_star_items = None
+        self.sim_count_0_user_item = None
 
     def adjusted_cosine_similarity(self, itemA, itemB):
         """
@@ -293,7 +292,7 @@ class TWMemoryCollaborativeFilter:
 
         
         # Transform data to UxI matrix
-        self.user_item_matrix = pd.pivot_table(data,
+        self.user_item_matrix = pd.pivot_table(self.data,
                                 index   = self.userId_col_name,
                                 columns = self.movieId_col_name,
                                 values  = self.rating_col_name)
@@ -495,7 +494,7 @@ class TWMemoryCollaborativeFilter:
         """     
         LAMBDA = 1 / t0
         timestamp = data_by_cluster_user['timestamp'].values
-        time_weight = np.exp(-LAMBDA * timestamp / self.rescale_parameter) # reescale
+        time_weight = np.exp(-LAMBDA * timestamp)
         return time_weight
 
     def LOO_prediction(self, u, i, cluster, t0):
@@ -603,9 +602,16 @@ class TWMemoryCollaborativeFilter:
         # find T0 value for items with sim_count = 1, using "T0 cluster mean" strategy
         T0_cluster_mean_by_user = self.T0_by_user_cluster_df.groupby(self.userId_col_name)["T0"].mean().to_dict()
 
+        # store the userId and movieId for the items that cannot compute the prediction of T0
+        self.sim_count_0_user_item = train_df_T0[train_df_T0['scenario']=='sim_count=0'][["userId", 'movieId']].groupby('userId')['movieId'].apply(list).to_dict()
+        # clean sim_count=0 values
+        train_df_T0 = train_df_T0[(train_df_T0['scenario']=='sim_count>1') | (train_df_T0['scenario']=='sim_count=1')]
+
         # fill T0 for "sim_count = 1" 
         mask1 = train_df_T0["scenario"] == "sim_count=1"
         mask2 = train_df_T0["scenario"] == "sim_count>1"
+        
+        
         train_df_T0.loc[mask1, "T0"] = train_df_T0[self.userId_col_name].map(T0_cluster_mean_by_user)
         train_df_T0.loc[mask2, "T0"] = train_df_T0.apply(lambda row: self.user_cluster_T0_map_dict.get(row[self.userId_col_name], {})\
             .get(row['cluster_label'], None), axis=1)
@@ -665,7 +671,7 @@ class TWMemoryCollaborativeFilter:
         t0 = df_aux["T0"].values
         LAMBDA = 1 / t0
         timestamp = df_aux[self.time_col_name].values
-        time_weight = np.exp(-LAMBDA * timestamp / self.rescale_parameter) # reescale
+        time_weight = np.exp(-LAMBDA * timestamp) # reescale
         return time_weight
 
     def compute_prediction(self, u, i):
