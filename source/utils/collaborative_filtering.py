@@ -287,7 +287,7 @@ class TWMemoryCollaborativeFilter:
         # scaling timestamps for each user in days based on their first interaction with the system.
         self.data[self.time_col_name] = pd.to_datetime(self.data[self.time_col_name], unit='s')
         self.data['initial_timestamp'] = self.data.groupby(self.userId_col_name)[self.time_col_name].transform('min')
-        self.data[self.time_col_name] = (self.data[self.time_col_name] - self.data['initial_timestamp']).dt.total_seconds() / (24 * 3600)
+        self.data[self.time_col_name] = (self.data[self.time_col_name] - self.data['initial_timestamp']).dt.total_seconds() / (3600) #(24 * 3600)
         self.data = self.data.drop(columns=['initial_timestamp'])
 
         
@@ -493,7 +493,7 @@ class TWMemoryCollaborativeFilter:
         - time_weight: Numpy array containing time weights calculated.
         """     
         LAMBDA = 1 / t0
-        timestamp = data_by_cluster_user['timestamp'].values
+        timestamp = data_by_cluster_user[self.time_col_name].values
         time_weight = np.exp(-LAMBDA * timestamp)
         return time_weight
 
@@ -552,8 +552,8 @@ class TWMemoryCollaborativeFilter:
                     mae = mean_absolute_error(self.y_true_LOO_by_cluster[u][cluster], hat_rating)
                     return mae
                 # lower and upper bounds for T0 candidates
-                lower_bound_T0 = 1e3
-                upper_bound_T0 = 5e3
+                lower_bound_T0 = 24   #min bound 1 day
+                upper_bound_T0 = 2190 #max bound 3 months
 
                 result = minimize_scalar(objective_function, bounds=(lower_bound_T0, upper_bound_T0))
                 T0 = result.x
