@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import torch
 from tqdm import tqdm
 from scipy.spatial.distance import pdist
 from scipy.optimize import minimize_scalar
@@ -71,12 +72,10 @@ class MemoryCollaborativeFilter:
         for item1 in tqdm(idx_items, desc="Computing Similarities", unit=" item"):
             similarity_dict[item1] = {}
             for item2 in idx_items:
-                # the customer purchased both items?
+                # the user interacted both items?
                 if np.any(np.logical_and(self.user_item_matrix.loc[:, item1], self.user_item_matrix.loc[:, item2])): 
-                    
                     # calculate the adjusted cosine similarity between the two items
                     similarity = self.adjusted_cosine_similarity(item1, item2) 
-                    
                     # we consider only the positive values of similarity
                     if similarity is not None and similarity >= 0:
                         similarity_dict[item1][item2] = similarity
@@ -531,7 +530,8 @@ class TWMemoryCollaborativeFilter:
         time_weight_LOO = self.get_time_weight_LOO(t0, data_by_cluster_user)
         num = sum(np.array(sim_weight_LOO) * np.array(ratings_neighbors_LOO) * np.array(time_weight_LOO))
         denom = sum(sim_weight_LOO * time_weight_LOO)
-        hat_rating =  num / denom
+        hat_rating = num / denom    
+        
         return hat_rating, user_ratings_mean
 
     def get_T0_by_user_cluster(self):
@@ -759,3 +759,98 @@ class TWMemoryCollaborativeFilter:
         
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
+
+class LFCollaborativeFilter:
+    def __init__(self, steps=5000, lr=0.0002, reg=0.02):
+        
+        self.steps = steps
+        self.lr = lr
+        self.reg = reg
+        self.U = None
+        self.V = None
+    
+    def fit(self, X, F):
+        R = pd.pivot_table(X,
+                        index   = "userId",
+                        columns = "movieId",
+                        values  = "rating")
+        R = R.map(lambda x: -1 if pd.isna(x) else x)
+        # Move data to GPU if available
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        R = torch.tensor(R.values, dtype=torch.float32, device=device)
+        # Initialize U and V random matrices
+        self.U = torch.randn(R.shape[0], F, device=device)
+        self.V = torch.randn(R.shape[1], F, device=device)
+        
+        for _ in tqdm(range(self.steps)):
+            R_hat = torch.mm(self.U, self.V.t())
+            rated_mask = (R > 0).float()
+
+            # Calculate error
+            error = rated_mask * (R - R_hat)
+            
+            # Update U and V using gradient descent
+            U_grad = -2 * torch.mm(error, self.V) + 2 * self.reg * self.U
+            V_grad = -2 * torch.mm(error.t(), self.U) + 2 * self.reg * self.V
+            self.U = self.U - self.lr * U_grad
+            self.V = self.V - self.lr * V_grad
+
+    def predict(self, u, i):
+        r_hat = torch.matmul(self.U[u,:], self.V[i,:].t()).cpu().numpy()
+        return round(float(r_hat), 1)
+
+# def matrix_factorization(R, F, iterations=5000, lr=0.0002, reg=0.02):
+#     # Move data to GPU if available
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+#     # Convert input matrix to PyTorch tensor
+#     R = torch.tensor(R, dtype=torch.float32, device=device)
+#     # Initialize U and V random matrices
+#     U = torch.randn(R.shape[0], F, device=device)
+#     V = torch.randn(R.shape[1], F, device=device)
+    
+
+#     for _ in tqdm(range(iterations)):
+#         R_hat = torch.mm(U, V.t())
+#         rated_mask = (R > 0).float()
+
+#         # Calculate error
+#         eij = rated_mask * (R - R_hat)
+        
+#         # Update U and V using gradient descent
+#         U_grad = -2 * torch.mm(eij, V) + 2 * reg * U
+#         V_grad = -2 * torch.mm(eij.t(), U) + 2 * reg * V
+#         U = U - lr * U_grad
+#         V = V - lr * V_grad
+
+#     return U.detach().cpu().numpy(), V.detach().cpu().numpy()
+
+
+
+
+###########################SGD WITH TORCH#################################
+# import torch
+# from torch import nn
+
+# def matrix_factorization(R, F, iterations=5000, lr=0.0002, reg=0.02):
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+#     R = torch.tensor(R, dtype=torch.float32, device=device)
+#     U = nn.Parameter(torch.randn(R.shape[0], F, device=device))
+#     V = nn.Parameter(torch.randn(R.shape[1], F, device=device))
+
+#     optimizer = torch.optim.SGD([U, V], lr=lr, weight_decay=reg)
+
+#     for _ in tqdm(range(iterations)):
+#         R_hat = torch.mm(U, V.t())
+#         rated_mask = (R > 0).float()
+#         eij = rated_mask * (R - R_hat)
+
+#         loss = torch.sum(eij ** 2) + reg * (torch.sum(U ** 2) + torch.sum(V ** 2))
+
+#         optimizer.zero_grad()
+#         loss.backward()
+#         optimizer.step()
+
+#     return U.detach().cpu().numpy(), V.detach().cpu().numpy()
