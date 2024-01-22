@@ -129,85 +129,70 @@ class MemoryCollaborativeFilter:
             print(f"Warning: Cold-Star problem detected: No neighbours found for item {i} to predict its rating")
             return np.nan, user_ratings_mean[u]
             
-    def recommend(self, u, dict_map=None, test_items=None, n_recommendations=10):
+    def recommend(self, u, dict_map=None, n_recommendations=10):
         """     
         Generate top n recommendations for a given user based on time-weighted item collaborative filtering.
 
         Parameters:
         - u (int): User ID.
         - dict_map (dict): Dictionary mapping internal item IDs to external item IDs. Defaults to None.
-        - test_items (list, optional): List of movies IDs set for test. Defaults to None.
         - n_recommendations (int): Number of top recommendations to generate.
 
         Returns:
         - rec (list): List of top n recommended item IDs for the specified user.
         
-        If the method receives `test_items`, it enters test mode and generates recommendations based on the provided list
-        of movies IDs, in this mode it returns the ids of the movies that are recommended. Otherwise, it generates 
-        recommendations based on the items that the user has not interacted with before.
+        Generates recommendations based on the items that the user has not interacted with before.
         """
         try :
             rating_predictions = {}
             items_to_predict = list(self.user_item_matrix.loc[u, self.user_item_matrix.loc[u, :].isna()].index)
-            
-            #if the method receives test_items, it enters test mode.
-            if test_items is not None:
-                items_to_predict = test_items[u]
-                for i in items_to_predict:
-                    rating_predictions[i] = self.compute_prediction(u, i)
-
-                    all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
-                    recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
-                return recommendations_ids
-            
             for i in items_to_predict:
                 rating_predictions[i] = self.compute_prediction(u, i)
-
             all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
             recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
             rec = [dict_map[item] for item in recommendations_ids]
-            return rec
+            for r in rec:
+                print(r)
         
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
 
 class TWMemoryCollaborativeFilter:
+    """
+    Initialize the TWMemoryCollaborativeFilter object with specified parameters.
+
+    Parameters:
+    - min_overlap (int): Minimum number of overlapping users required for similarity calculation.
+    - n_neighbours (int): Number of neighbors to consider in collaborative filtering. A number of neighbors between 20 to 50 is most often recommended.
+    - n_recommendations (int): Number of top recommendations to generate.
+    - max_n_clusters (int): Maximum number of clusters to consider. A larger number may result in overfitting.
+    - refine_n_clusters (bool): If True, refines the number of clusters based on silhouette scores.
+    - userId_col_name (str): Name of the column containing user IDs in the input data.
+    - movieId_col_name (str): Name of the column containing movie IDs in the input data.
+    - rating_col_name (str): Name of the column containing ratings in the input data.
+    - time_col_name (str): Name of the column containing timestamps in the input data.
+    - verbose (bool): If True, provides detailed information about the process.
+    - random_state (int): Used for deterministic results.
+
+    Attributes:
+    - min_overlap (int): Minimum number of overlapping users required for similarity calculation.
+    - n_neighbours (int): Number of neighbors to consider in collaborative filtering.
+    - userId_col_name (str): Name of the column containing user IDs in the input data.
+    - movieId_col_name (str): Name of the column containing movie IDs in the input data.
+    - rating_col_name (str): Name of the column containing ratings in the input data.
+    - time_col_name (str): Name of the column containing timestamps in the input data.
+    - max_n_clusters (int): Maximum number of clusters to consider. A larger number may result in overfitting.
+    - refine_n_clusters (bool): If True, refines the number of clusters based on silhouette scores.
+    - rescale_parameter (float): Rescaling parameter for time-weighted calculations.
+    - items_similarities (dict): Dictionary containing item similarities based on adjusted cosine similarity.
+    - user_item_matrix (pd.DataFrame): User-item matrix representation of the input data.
+    - data (pd.DataFrame): Original input data used to train the collaborative filter.
+    - train_LOO (pd.DataFrame): Leave-One-Out train set with NaN ratings for validation movies.
+    - sim_count_0_user_item(dict): userId and movieId for the items that cannot compute the prediction of T0
+    """
     def __init__(self, min_overlap=5, n_neighbours=40, max_n_clusters=3, 
                  refine_n_clusters= True, userId_col_name="userId", movieId_col_name='movieId', 
                  rating_col_name="rating", time_col_name = 'timestamp', verbose = False, random_state = 1203):
-        """
-        Initialize the TWMemoryCollaborativeFilter object with specified parameters.
-
-        Parameters:
-        - min_overlap (int): Minimum number of overlapping users required for similarity calculation.
-        - n_neighbours (int): Number of neighbors to consider in collaborative filtering. A number of neighbors between 20 to 50 is most often recommended.
-        - n_recommendations (int): Number of top recommendations to generate.
-        - max_n_clusters (int): Maximum number of clusters to consider. A larger number may result in overfitting.
-        - refine_n_clusters (bool): If True, refines the number of clusters based on silhouette scores.
-        - userId_col_name (str): Name of the column containing user IDs in the input data.
-        - movieId_col_name (str): Name of the column containing movie IDs in the input data.
-        - rating_col_name (str): Name of the column containing ratings in the input data.
-        - time_col_name (str): Name of the column containing timestamps in the input data.
-        - verbose (bool): If True, provides detailed information about the process.
-        - random_state (int): Used for deterministic results.
-
-        Attributes:
-        - min_overlap (int): Minimum number of overlapping users required for similarity calculation.
-        - n_neighbours (int): Number of neighbors to consider in collaborative filtering.
-        - userId_col_name (str): Name of the column containing user IDs in the input data.
-        - movieId_col_name (str): Name of the column containing movie IDs in the input data.
-        - rating_col_name (str): Name of the column containing ratings in the input data.
-        - time_col_name (str): Name of the column containing timestamps in the input data.
-        - max_n_clusters (int): Maximum number of clusters to consider. A larger number may result in overfitting.
-        - refine_n_clusters (bool): If True, refines the number of clusters based on silhouette scores.
-        - rescale_parameter (float): Rescaling parameter for time-weighted calculations.
-        - items_similarities (dict): Dictionary containing item similarities based on adjusted cosine similarity.
-        - user_item_matrix (pd.DataFrame): User-item matrix representation of the input data.
-        - data (pd.DataFrame): Original input data used to train the collaborative filter.
-        - train_LOO (pd.DataFrame): Leave-One-Out train set with NaN ratings for validation movies.
-        - sim_count_0_user_item(dict): userId and movieId for the items that cannot compute the prediction of T0
-        """
-    
         self.min_overlap = min_overlap
         self.n_neighbours = n_neighbours
         self.userId_col_name = userId_col_name
@@ -716,7 +701,7 @@ class TWMemoryCollaborativeFilter:
                 print(f"Warning: Cold-Star problem detected: No neighbours found for item {i} to predict its rating for user {u}")
             return np.nan, user_ratings_mean
     
-    def recommend(self, u, dict_map=None, test_items=None, n_recommendations=10):
+    def recommend(self, u, dict_map=None, n_recommendations=10):
         """     
         Generate top n recommendations for a given user based on time-weighted item collaborative filtering.
 
@@ -729,51 +714,82 @@ class TWMemoryCollaborativeFilter:
         Returns:
         - rec (list): List of top n recommended item IDs for the specified user.
         
-        If the method receives `test_items`, it enters test mode and generates recommendations based on the provided list
-        of movies IDs, in this mode it returns the ids of the movies that are recommended. Otherwise, it generates 
-        recommendations based on the items that the user has not interacted with before.
-        
-        Note: In test mode, the method dont use the dict_map hiperparameter.
+        Generates recommendations based on the items that the user has not interacted with before.
         """
         try :
             rating_predictions = {}
             items_to_predict = list(self.user_item_matrix.loc[u, self.user_item_matrix.loc[u, :].isna()].index)
             
-            #if the method receives test_items, it enters test mode.
-            if test_items is not None:
-                items_to_predict = test_items[u]
-                for i in items_to_predict:
-                    rating_predictions[i] = self.compute_prediction(u, i)
-
-                    all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
-                    recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
-                return recommendations_ids
-            
             for i in items_to_predict:
                 rating_predictions[i] = self.compute_prediction(u, i)
-
             all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
             recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
             rec = [dict_map[item] for item in recommendations_ids]
-            return rec
-        
+            for r in rec:
+                print(r)
         except KeyError:
             print(f"Warning Cold-Star Problem detected: User {u} is not registered")
 
 class LFCollaborativeFilter:
-    def __init__(self, steps=5000, lr=0.0002, reg=0.02):
-        
+    """
+    LFCollaborativeFilter is a collaborative filtering recommendation system based on matrix factorization.
+
+    Parameters:
+        - steps (int): Number of steps for the gradient descent optimization (default is 5000).
+        - lr (float): Learning rate for the gradient descent optimization (default is 0.0002).
+        - reg (float): Regularization parameter to control overfitting (default is 3).
+        - random_state (int): Seed for random number generation to ensure reproducibility (default is 1203).
+
+    Attributes:
+        - steps (int): Number of steps for the gradient descent optimization.
+        - lr (float): Learning rate for the gradient descent optimization.
+        - reg (float): Regularization parameter to control overfitting.
+        - U (torch.Tensor): User matrix learned during the training process.
+        - V (torch.Tensor): Item matrix learned during the training process.
+        - users_map (dict): Mapping from user ID to torch matrix index.
+        - items_map (dict): Mapping from item ID to torch matrix column.
+        - R_copy (pd.DataFrame): Copy of the input data in a pivot table format.
+        - random_state (int): Seed for random number generation.
+        """
+    def __init__(self, steps=5000, lr=0.0002, reg=3, random_state=1203):
+        """
+        Initialize the LFCollaborativeFilter with specified parameters.
+
+        Parameters:
+            - steps (int): Number of steps for the gradient descent optimization (default is 5000).
+            - lr (float): Learning rate for the gradient descent optimization (default is 0.0002).
+            - reg (float): Regularization parameter to control overfitting (default is 3).
+            - random_state (int): Seed for random number generation to ensure reproducibility (default is 1203).
+        """
         self.steps = steps
         self.lr = lr
         self.reg = reg
         self.U = None
         self.V = None
+        self.users_map = None
+        self.items_map = None
+        self.R_copy = None
+        self.random_state = random_state
+        torch.manual_seed(random_state)
     
-    def fit(self, X, F):
+    def fit(self, X, F=2):
+        """
+        Train the collaborative filter on the input data X with latent factor F.
+
+        Parameters:
+            - X (pd.DataFrame): Input data containing user, item, and rating information.
+            - F (int): Number of latent factors (default is 2).
+        """
         R = pd.pivot_table(X,
                         index   = "userId",
                         columns = "movieId",
                         values  = "rating")
+        self.R_copy = R.copy()
+        #map from userID to torch.matrix idx
+        self.users_map = dict(zip(R.index, range(0, len(R.index))))
+        #map from itemID to torch.matrix column
+        self.items_map = dict(zip(R.columns, range(0, len(R.columns))))        
+        
         R = R.map(lambda x: -1 if pd.isna(x) else x)
         # Move data to GPU if available
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -783,7 +799,9 @@ class LFCollaborativeFilter:
         self.U = torch.randn(R.shape[0], F, device=device)
         self.V = torch.randn(R.shape[1], F, device=device)
         
-        for _ in tqdm(range(self.steps)):
+        prev_error = float('inf')
+        
+        for epoch in tqdm(range(self.steps)):
             R_hat = torch.mm(self.U, self.V.t())
             rated_mask = (R > 0).float()
 
@@ -796,9 +814,49 @@ class LFCollaborativeFilter:
             self.U = self.U - self.lr * U_grad
             self.V = self.V - self.lr * V_grad
 
-    def predict(self, u, i):
-        r_hat = torch.matmul(self.U[u,:], self.V[i,:].t()).cpu().numpy()
+            # early stopping
+            current_error = torch.sum(error**2).item() + self.reg * (torch.sum(self.U**2).item() + torch.sum(self.V**2).item())
+            if current_error < 0.001 or abs(prev_error - current_error) < 1e-5:
+                print(f"Early stopping at epoch {epoch + 1}. Final error: {current_error}")
+                break
+            prev_error = current_error
+
+    def compute_prediction(self, u, i):
+        """
+        Compute the predicted rating for a user u and an item i.
+
+        Parameters:
+            - u: User ID.
+            - i: Item ID.
+
+        Returns:
+            - float: Predicted rating for the user-item pair.
+        """
+        r_hat = torch.matmul(self.U[self.users_map[u],:], self.V[self.items_map[i],:].t()).cpu().numpy()
         return round(float(r_hat), 1)
+    
+    def recommend(self, u, dict_map=None, n_recommendations=10):
+        """
+        Provide recommendations for a user u.
+
+        Parameters:
+            - u: User ID.
+            - dict_map (dict): Dictionary mapping item IDs to corresponding names (default is None).
+            - n_recommendations (int): Number of recommendations to provide (default is 10).
+        """
+        try:
+            rating_predictions = {}
+            items_to_predict = self.R_copy.loc[u, self.R_copy.loc[u, :].isna()].index
+            
+            for i in items_to_predict:
+                rating_predictions[i] = self.compute_prediction(u, i)
+                all_recommendations = dict(sorted(rating_predictions.items(), key=lambda item: item[1], reverse=True))
+                recommendations_ids = [k for k, _ in list(all_recommendations.items())[:n_recommendations]]
+                rec = [dict_map[item] for item in recommendations_ids]
+            for r in rec:
+                print(r)
+        except KeyError:
+            print(f"Warning Cold-Star Problem detected: User {u} is not registered")
 
 # def matrix_factorization(R, F, iterations=5000, lr=0.0002, reg=0.02):
 #     # Move data to GPU if available
@@ -854,3 +912,8 @@ class LFCollaborativeFilter:
 #         optimizer.step()
 
 #     return U.detach().cpu().numpy(), V.detach().cpu().numpy()
+
+
+
+
+
